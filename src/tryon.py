@@ -1,7 +1,8 @@
 """Garment-conditioned virtual try-on with Space + SD2 fallbacks.
 
 Primary: IDM-VTON Hugging Face Space (person image + garment image).
-Fallback: CatVTON Space, then Stable Diffusion 2 Inpainting, then cached demo.
+Fallback: CatVTON Space, then Stable Diffusion 2 Inpainting, then a local
+garment overlay, then a cached demo image.
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ from dotenv import load_dotenv
 from PIL import Image
 
 from .hf_auth import ensure_hf_login, hf_token
-from .preprocess import build_garment_prompt, negative_prompt
+from .preprocess import build_garment_prompt, negative_prompt, normalize_garment_region
 
 load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=True)
 
@@ -29,7 +30,11 @@ DEFAULT_MODEL = os.getenv(
 )
 IDM_SPACE = os.getenv("VTON_SPACE", "yisol/IDM-VTON")
 CATVTON_SPACE = os.getenv("CATVTON_SPACE", "zhengchong/CatVTON")
-API_URL_TMPL = "https://api-inference.huggingface.co/models/{model}"
+# api-inference.huggingface.co was decommissioned; Inference Providers live here.
+API_URL_TMPL = os.getenv(
+    "HF_INFERENCE_URL",
+    "https://router.huggingface.co/hf-inference/models/{model}",
+)
 DEMO_DIR = Path(__file__).resolve().parents[1] / "assets" / "demo"
 SAMPLES_DIR = Path(__file__).resolve().parents[1] / "data" / "samples"
 
@@ -72,6 +77,11 @@ def _as_pil(obj: Any) -> Optional[Image.Image]:
             if img is not None:
                 return img
         return None
+    if isinstance(obj, (bytes, bytearray)):
+        try:
+            return _bytes_to_pil(bytes(obj))
+        except Exception:
+            return None
     if isinstance(obj, dict):
         for key in ("image", "path", "name", "value", "url"):
             if key in obj:
@@ -150,17 +160,27 @@ def _save_temp_png(image: Image.Image, folder: Path, name: str) -> str:
 
 
 def _cloth_type(category: str) -> str:
-    cat = (category or "upper").strip().lower()
-    if cat in {"dress", "overall", "full"}:
+    cat = normalize_garment_region(category)
+    if cat == "dress":
         return "overall"
-    if cat in {"lower", "lower body"}:
-        return "lower"
-    return "upper"
+    return cat
 
 
-def _idm_supports(category: str) -> bool:
+def _prompt_looks_lower(prompt: str) -> bool:
+    blob = str(prompt or "").lower()
+    return any(
+        word in blob
+        for word in ("pant", "jean", "skirt", "trouser", "short", "lower-body", "lower body", " a lower")
+    )
+
+
+def _idm_supports(category: str, extra_prompt: str = "") -> bool:
     """Public IDM-VTON Space is VITON-HD upper-body only — pants become tops there."""
-    return _cloth_type(category) == "upper"
+    if normalize_garment_region(category) != "upper":
+        return False
+    if _prompt_looks_lower(extra_prompt):
+        return False
+    return True
 
 
 def _gradio_file(path: str):
@@ -178,16 +198,43 @@ def _space_client(space: str, timeout: int = 300):
     from gradio_client import Client
 
     token = _optional_token()
-    kwargs: dict[str, Any] = {}
+    kwargs: dict[str, Any] = {"httpx_kwargs": {"timeout": float(timeout)}}
     if token:
         kwargs["token"] = token
     try:
         return Client(space, **kwargs)
     except TypeError:
+        kwargs.pop("httpx_kwargs", None)
         if token:
             kwargs.pop("token", None)
             kwargs["hf_token"] = token
         return Client(space, **kwargs)
+
+
+def _editor_payload(person_file: Any, layer_file: Any) -> dict[str, Any]:
+    """Gradio ImageEditor dict. CatVTON indexes layers[0], so the layer is required."""
+    return {
+        "background": person_file,
+        "layers": [layer_file],
+        "composite": person_file,
+    }
+
+
+def _save_mask_layer(
+    folder: Path,
+    size: tuple[int, int],
+    mask: Optional[Image.Image] = None,
+) -> str:
+    """RGB layer for CatVTON: white = try-on region. Solid black → automasker."""
+    if mask is not None:
+        layer = mask.convert("L")
+        if layer.size != size:
+            layer = layer.resize(size, Image.Resampling.NEAREST)
+        if layer.getbbox() is not None:
+            rgb = Image.merge("RGB", (layer, layer, layer))
+            return _save_temp_png(rgb, folder, "mask_layer.png")
+    blank = Image.new("RGB", size, (0, 0, 0))
+    return _save_temp_png(blank, folder, "mask_layer.png")
 
 
 def run_idm_vton(
@@ -218,7 +265,7 @@ def run_idm_vton(
             seed=42,
             api_name="/tryon",
         )
-    img = _as_pil(out)
+        img = _as_pil(out)
     if img is None:
         raise RuntimeError(f"IDM-VTON returned no image: {type(out)}")
     return img
@@ -228,42 +275,66 @@ def run_catvton(
     person: Image.Image,
     garment: Image.Image,
     category: str = "upper",
+    mask: Optional[Image.Image] = None,
     timeout: int = 300,
 ) -> Image.Image:
-    """Call zhengchong/CatVTON Space with person + garment images."""
+    """Call zhengchong/CatVTON Space with person + garment + cloth type.
+
+    Live endpoints are /submit_function, /submit_function_flux, /submit_function_p2p.
+    /predict is not published on this Space.
+    """
     client = _space_client(CATVTON_SPACE, timeout=timeout)
     cloth_type = _cloth_type(category)
+    errors: list[str] = []
     with tempfile.TemporaryDirectory(prefix="vesture_cat_") as tmp:
         tmp_path = Path(tmp)
         person_path = _save_temp_png(person, tmp_path, "person.png")
         garment_path = _save_temp_png(garment, tmp_path, "garment.png")
+        layer_path = _save_mask_layer(tmp_path, person.size, mask)
         person_file = _gradio_file(person_path)
-        payload = {
-            "background": person_file,
-            "layers": [],
-            "composite": person_file,
-        }
-        last_err: Exception | None = None
-        for api_name in ("/submit_function", "/predict"):
+        cloth_file = _gradio_file(garment_path)
+        payload = _editor_payload(person_file, _gradio_file(layer_path))
+
+        # Only fall through to Flux / mask-free if this Space dropped /submit_function.
+        # A GPU/queue failure on the main endpoint will fail the others too.
+        for api_name in ("/submit_function", "/submit_function_flux"):
             try:
                 out = client.predict(
-                    payload,
-                    _gradio_file(garment_path),
-                    cloth_type,
-                    30,
-                    2.5,
-                    42,
-                    "result only",
+                    person_image=payload,
+                    cloth_image=cloth_file,
+                    cloth_type=cloth_type,
+                    num_inference_steps=30,
+                    guidance_scale=2.5,
+                    seed=42,
+                    show_type="result only",
                     api_name=api_name,
                 )
                 img = _as_pil(out)
                 if img is not None:
                     return img
-                last_err = RuntimeError(f"CatVTON {api_name} returned no image")
+                errors.append(f"{api_name} returned no image")
             except Exception as exc:
-                last_err = exc
-                continue
-    raise RuntimeError(f"CatVTON failed: {last_err}")
+                errors.append(f"{api_name}: {exc}")
+                if "cannot find a function" not in str(exc).lower():
+                    break
+
+        if errors and all("cannot find a function" in e.lower() for e in errors):
+            try:
+                out = client.predict(
+                    person_image=payload,
+                    cloth_image=cloth_file,
+                    num_inference_steps=30,
+                    guidance_scale=2.5,
+                    seed=42,
+                    api_name="/submit_function_p2p",
+                )
+                img = _as_pil(out)
+                if img is not None:
+                    return img
+                errors.append("/submit_function_p2p returned no image")
+            except Exception as exc:
+                errors.append(f"/submit_function_p2p: {exc}")
+    raise RuntimeError(" | ".join(errors) or "CatVTON returned no image")
 
 
 def run_inpainting(
@@ -273,8 +344,8 @@ def run_inpainting(
     model: str = DEFAULT_MODEL,
     num_inference_steps: int = 30,
     guidance_scale: float = 7.5,
-    timeout: int = 180,
-    max_retries: int = 3,
+    timeout: int = 60,
+    max_retries: int = 2,
 ) -> Image.Image:
     """
     Call HF Inference API for SD2 inpainting.
@@ -304,28 +375,14 @@ def run_inpainting(
     last_err: Exception | None = None
     for attempt in range(max_retries):
         try:
-            try:
-                from huggingface_hub import InferenceClient
-
-                client = InferenceClient(model=model, token=_token(), timeout=timeout)
-                if hasattr(client, "image_to_image"):
-                    out = client.image_to_image(
-                        image=person,
-                        prompt=prompt,
-                        negative_prompt=negative_prompt(),
-                    )
-                    if isinstance(out, Image.Image):
-                        return out.convert("RGB")
-            except Exception as hub_exc:
-                last_err = hub_exc
-
             resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
             if resp.status_code == 503:
-                wait = min(20, 5 * (attempt + 1))
-                time.sleep(wait)
+                last_err = RuntimeError(f"HF API 503: {resp.text[:400]}")
+                time.sleep(min(20, 5 * (attempt + 1)))
                 continue
             if resp.status_code >= 400:
-                raise RuntimeError(f"HF API {resp.status_code}: {resp.text[:400]}")
+                last_err = RuntimeError(f"HF API {resp.status_code}: {resp.text[:400]}")
+                break
 
             ctype = resp.headers.get("content-type", "")
             if "image" in ctype or resp.content[:8] == b"\x89PNG\r\n\x1a\n":
@@ -339,9 +396,31 @@ def run_inpainting(
             raise RuntimeError(f"Unexpected JSON response: {str(data)[:300]}")
         except Exception as exc:
             last_err = exc
-            time.sleep(2 * (attempt + 1))
+            if attempt + 1 < max_retries:
+                time.sleep(2 * (attempt + 1))
 
     raise RuntimeError(f"Inpainting failed after retries: {last_err}")
+
+
+def run_local_overlay(
+    person: Image.Image,
+    garment: Image.Image,
+    mask: Image.Image,
+) -> Image.Image:
+    """Paste the garment into the masked region when remote try-on APIs are down."""
+    person_rgb = person.convert("RGB")
+    mask_l = mask.convert("L")
+    if mask_l.size != person_rgb.size:
+        mask_l = mask_l.resize(person_rgb.size, Image.Resampling.NEAREST)
+    bbox = mask_l.getbbox()
+    if bbox is None:
+        raise RuntimeError("Empty clothing mask — cannot overlay garment.")
+    x0, y0, x1, y1 = bbox
+    box_w, box_h = max(1, x1 - x0), max(1, y1 - y0)
+    fitted = garment.convert("RGB").resize((box_w, box_h), Image.Resampling.LANCZOS)
+    region = person_rgb.copy()
+    region.paste(fitted, (x0, y0))
+    return Image.composite(region, person_rgb, mask_l)
 
 
 def try_on(
@@ -389,13 +468,14 @@ def try_on_vton(
     prompt = extra_prompt or build_garment_prompt(
         category, color=color, style=style, extra=extra_prompt
     )
+    category = normalize_garment_region(category)
     cloth_type = _cloth_type(category)
     errors: list[str] = []
 
     if garment is not None:
         # IDM-VTON's public Space has no cloth-type control and always paints
         # onto the torso. Skip it for pants/skirts/dresses so they stay lower-body.
-        if _idm_supports(category):
+        if _idm_supports(category, prompt):
             try:
                 result = run_idm_vton(person, garment, prompt)
                 return result, None, prompt, "IDM-VTON"
@@ -403,11 +483,9 @@ def try_on_vton(
                 errors.append(f"IDM-VTON: {exc}")
 
         try:
-            result = run_catvton(person, garment, category=category)
+            result = run_catvton(person, garment, category=category, mask=mask)
             warn = None
-            if cloth_type != "upper":
-                warn = f"Used CatVTON with cloth type “{cloth_type}” (IDM-VTON is tops-only)."
-            elif errors:
+            if cloth_type == "upper" and errors:
                 warn = f"IDM-VTON Space unavailable; used CatVTON. ({errors[-1]})"
             return result, warn, prompt, "CatVTON"
         except Exception as exc:
@@ -425,6 +503,19 @@ def try_on_vton(
         return result, warn, prompt, "SD2 Inpainting"
     except Exception as exc:
         errors.append(f"SD2: {exc}")
+
+    if garment is not None:
+        try:
+            result = run_local_overlay(person, garment, mask)
+            return (
+                result,
+                "Try-on Spaces and SD2 were unavailable; used a local garment overlay. "
+                + " | ".join(errors[-2:]),
+                prompt,
+                "local overlay",
+            )
+        except Exception as exc:
+            errors.append(f"overlay: {exc}")
 
     if use_demo_fallback:
         cached = find_demo_fallback()

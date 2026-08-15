@@ -21,15 +21,16 @@ from PIL import Image
 from src.confidence import DEFAULT_GATE, evaluate_segmentation_gate, summarize_scores
 from src.hf_auth import ensure_hf_login
 from src.llm_advisor import caption_garment, explain_result, style_advice
-from src.preprocess import load_rgb, preprocess_garment, preprocess_person, quality_check
+from src.preprocess import load_rgb, preprocess_garment, preprocess_person, quality_check, normalize_garment_region
 from src.recommend import clip_similarity, crop_by_mask, recommend_top_k
-from src.segmentation import colorize_labels, segment_clothing
+from src.segmentation import colorize_labels, infer_garment_category, segment_clothing
 from src.stylist import (
     analyze_avatar,
     avatar_label_map,
     build_analysis_boards,
     catalog_for_avatar,
     catalog_for_query,
+    compact_body_copy,
     interpret_chat,
     reply_to_shopper,
     swatch_hex,
@@ -967,13 +968,15 @@ def tryon_tab():
             )
             catalog_pick = st.session_state.get("catalog_garment_path")
             if catalog_pick and Path(catalog_pick).exists():
-                st.caption(
-                    f"Catalog pick · {st.session_state.get('catalog_garment_title', Path(catalog_pick).name)}"
-                )
+                cat_label = st.session_state.get("catalog_garment_category") or ""
+                title = st.session_state.get("catalog_garment_title", Path(catalog_pick).name)
+                suffix = f" · {cat_label}" if cat_label else ""
+                st.caption(f"Catalog pick · {title}{suffix}")
                 _show_photo(Path(catalog_pick), max_width=280)
                 if st.button("Clear catalog pick", type="secondary"):
                     st.session_state.pop("catalog_garment_path", None)
                     st.session_state.pop("catalog_garment_title", None)
+                    st.session_state.pop("catalog_garment_category", None)
                     st.rerun()
         demo_pairs = list_demo_pairs()
         demo_choice = "Upload my own"
@@ -1047,6 +1050,13 @@ def tryon_tab():
                 if catalog_pick and Path(catalog_pick).exists():
                     garment = preprocess_garment(load_rgb(Image.open(catalog_pick)))
 
+        category = normalize_garment_region(category)
+        raw_catalog_cat = st.session_state.get("catalog_garment_category")
+        if raw_catalog_cat:
+            catalog_cat = normalize_garment_region(raw_catalog_cat)
+            if catalog_cat == "lower":
+                category = "lower"
+
         ok, msg = quality_check(person_raw)
         if not ok:
             st.error(msg)
@@ -1056,6 +1066,15 @@ def tryon_tab():
 
         with st.spinner("Running SegFormer clothing segmentation…"):
             _warm_segformer()
+            if garment is not None:
+                try:
+                    guessed = infer_garment_category(garment)
+                    if guessed == "lower":
+                        category = "lower"
+                    elif guessed == "dress" and category != "upper":
+                        category = "dress"
+                except Exception:
+                    pass
             mask, seg_conf, label_map = segment_clothing(person, category=category)
 
         ok_gate, gate_msg = evaluate_segmentation_gate(seg_conf, DEFAULT_GATE)
@@ -1083,7 +1102,7 @@ def tryon_tab():
 
         v1, v2, v3 = st.columns(3)
         _show_array(person, caption="Person (preprocessed)", slot=v1)
-        _show_array(mask, caption="Clothing mask", slot=v2)
+        _show_array(mask, caption=f"Clothing mask · {category}", slot=v2)
         if show_labels:
             _show_array(colorize_labels(label_map), caption="Label map", slot=v3)
         elif garment is not None:
@@ -1698,6 +1717,8 @@ def _handle_stylist_prompt(
             _remember_recs(new_recs)
 
     table = new_recs or recs
+    if intent["action"] == "colors":
+        table = []
     reply, used = reply_to_shopper(
         prompt,
         analysis=analysis,
@@ -1845,10 +1866,9 @@ def stylist_tab():
                     _pill(str(analysis.get("body_type") or "unspecified"), "ok"),
                     unsafe_allow_html=True,
                 )
-                st.write(analysis.get("body_notes") or "")
-                st.write(analysis.get("style_direction") or "")
-                if analysis.get("silhouette_tips"):
-                    st.caption(analysis["silhouette_tips"])
+                body_copy = compact_body_copy(analysis, max_sentences=3)
+                if body_copy:
+                    st.write(body_copy)
                 occasions = analysis.get("occasions") or []
                 if occasions:
                     st.caption("Occasions · " + ", ".join(str(o) for o in occasions))
@@ -1946,10 +1966,10 @@ def stylist_tab():
             selected = st.pills(
                 "Try asking",
                 [
-                    "Give me more recommendations",
                     "What colors suit me?",
+                    "I want to wear for a fashion show",
                     "Casual weekend outfits",
-                    "Try the top match in Studio",
+                    "Give me more recommendations",
                 ],
                 label_visibility="collapsed",
             )

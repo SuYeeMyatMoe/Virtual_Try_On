@@ -14,6 +14,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 from PIL import Image
 
+from .preprocess import normalize_garment_region
+
 _ENV = Path(__file__).resolve().parents[1] / ".env"
 load_dotenv(_ENV, override=True)
 
@@ -34,19 +36,21 @@ SYSTEM_CHAT = (
     "Think like a creative director: silhouette, color theory, fabric, proportion, occasion, "
     "and what will actually flatter this client. Recommend with confidence — what to wear, "
     "why it works, and what to pair. When catalog pieces are listed, rank them and say which "
-    "to try first. When the shopper shares a photo, read the garment, color, and fit before advising. "
+    "to try first. Prefer pieces that sit in the client's palette; say so if a listed piece "
+    "is too harsh (for example stark black on a Soft Summer). "
+    "When the shopper shares a photo, read the garment, color, and fit before advising. "
     "When they send a voice note, treat the transcript as their brief. "
     "If a client profile exists, stay inside that palette and body type. "
+    "Never tell them to upload an avatar or tap Analyze if a color season or body type is already in the profile. "
     "If nothing has been analyzed yet, still give precise general advice. "
     "Reply in 2–6 short sentences. Do not invent brand names. No hashtags. No emoji.\n"
-    "Example — shopper: I have a garden wedding and cool undertones.\n"
-    "You: Stay in jewel and icy tones — emerald, powder blue, true navy. "
-    "A defined-waist midi or a tailored jacket over a fluid skirt will photograph well "
-    "and keep the silhouette formal without feeling costume.\n"
-    "Example — shopper: Casual weekend, pear shape.\n"
-    "You: Structure the top — a collared shirt or cropped jacket — and keep trousers "
-    "in a continuous dark or mid tone so the hip line stays quiet. Add one leather or "
-    "metal accessory so the look does not read flat."
+    "Example — shopper: What colors suit me? Profile: Soft Summer, dusty rose, sage, taupe, navy.\n"
+    "You: Your Soft Summer set is dusty rose, sage, taupe, soft navy, and mauve. "
+    "Those muted cool-neutrals sit quietly on your skin; ease off hot pink, orange, and stark white.\n"
+    "Example — shopper: I want to wear for a fashion show. Profile: inverted triangle, Soft Summer.\n"
+    "You: Keep the shoulder line soft — a fluid dusty-rose or taupe blouse, not a boxy black blazer. "
+    "Give the lower half a clean navy or mauve column so the walk reads editorial. "
+    "One metallic or leather accessory is enough; skip a tracksuit."
 )
 
 FEW_SHOT_CAPTION = (
@@ -250,11 +254,9 @@ def _template_caption(
 ) -> str:
     kind = {
         "upper": "top or shirt",
-        "upper body": "top or shirt",
         "lower": "pair of pants or a skirt",
-        "lower body": "pair of pants or a skirt",
         "dress": "dress",
-    }.get((category or "upper").strip().lower(), "fashion garment")
+    }.get(normalize_garment_region(category), "fashion garment")
     bits = [p for p in (color, style) if p]
     look = " ".join(bits + [kind]) if bits else kind
     return f"a {look} with clean lines and wearable everyday styling"
@@ -274,23 +276,20 @@ def caption_garment(
     fallback = _template_caption(category, color, style)
     if image is None or not has_gemini():
         return fallback, False
+    region = normalize_garment_region(category)
     region_lock = {
         "lower": (
             "This is a LOWER-BODY garment (pants, jeans, shorts, or skirt). "
             "Never describe it as a shirt, top, blouse, or jacket."
         ),
-        "lower body": (
-            "This is a LOWER-BODY garment (pants, jeans, shorts, or skirt). "
-            "Never describe it as a shirt, top, blouse, or jacket."
-        ),
         "dress": "This is a DRESS. Do not describe it as a separate top.",
         "upper": "This is an UPPER-BODY garment (shirt, blouse, jacket, or knit).",
-    }.get((category or "upper").strip().lower(), "")
+    }.get(region, "")
     prompt = (
         f"{FEW_SHOT_CAPTION}\n"
         "Describe this garment in one sentence for a virtual try-on model. "
         "Include color, fabric, silhouette, and garment type. "
-        f"Category hint: {category}. {region_lock}"
+        f"Category hint: {region}. {region_lock}"
     )
     try:
         text = _generate_text(prompt, image=image)
@@ -306,11 +305,133 @@ def _top5_line(top5: Optional[Sequence[dict]]) -> str:
     for item in list(top5)[:5]:
         title = item.get("title", "item")
         sim = item.get("similarity")
+        color = item.get("color")
+        label = str(title)
+        if color:
+            label = f"{title} ({color})"
         if isinstance(sim, (int, float)):
-            parts.append(f"{title} ({sim:.0%})")
+            parts.append(f"{label} {sim:.0%}")
         else:
-            parts.append(str(title))
+            parts.append(label)
     return "; ".join(parts)
+
+
+def _has_profile(analysis: Optional[dict]) -> bool:
+    analysis = analysis or {}
+    return bool(analysis.get("color_season") or analysis.get("body_type") or analysis.get("palette"))
+
+
+def _palette_line(analysis: dict) -> str:
+    colors = [str(c) for c in (analysis.get("palette") or []) if str(c).strip()]
+    return ", ".join(colors[:6])
+
+
+def _avoid_line(analysis: dict) -> str:
+    colors = [str(c) for c in (analysis.get("avoid_colors") or []) if str(c).strip()]
+    return ", ".join(colors[:4])
+
+
+def _body_line(body_type: str) -> str:
+    key = str(body_type or "").strip().lower()
+    tips = {
+        "inverted triangle": (
+            "Ease the shoulder — a fluid blouse or open jacket, not a boxy blazer — "
+            "and give the lower half a strong column."
+        ),
+        "pear": "Structure the top and keep the lower half in a continuous mid or dark tone.",
+        "apple": "A longer line through the middle keeps proportion calm; avoid cling at the waist.",
+        "hourglass": "A defined waist or a jacket that nips in will follow the frame.",
+        "rectangle": "A break at the waist — belt, tuck, or cropped layer — adds shape.",
+        "athletic": "Tailored layers and a clear hem line add interest to a straight frame.",
+    }
+    return tips.get(key, "Keep proportion clean: one tailored piece, one easy piece.")
+
+
+def local_stylist_reply(
+    user_message: str,
+    analysis: Optional[dict] = None,
+    recs: Optional[Sequence[dict]] = None,
+) -> str:
+    """Grounded reply when Gemini is down. Uses the analyzed profile; never asks to re-analyze."""
+    analysis = analysis or {}
+    text = (user_message or "").lower()
+    season = str(analysis.get("color_season") or "").strip()
+    undertone = str(analysis.get("undertone") or "").strip()
+    body = str(analysis.get("body_type") or "").strip()
+    palette = _palette_line(analysis)
+    avoid = _avoid_line(analysis)
+    rec_line = _top5_line(recs)
+    has_recs = rec_line != "No catalog matches yet."
+
+    if not _has_profile(analysis):
+        return (
+            "I can still style you in general terms. For a fashion show, pick one clear silhouette "
+            "and a tight palette — navy, taupe, or ivory — and keep the walk uncluttered. "
+            "Upload an avatar and tap Analyze if you want colors locked to your skin."
+        )
+
+    color_q = any(
+        p in text
+        for p in ("color", "colour", "palette", "suit me", "undertone", "season", "wearable")
+    )
+    show_q = any(
+        p in text for p in ("fashion show", "runway", "editorial", "walk", "couture")
+    )
+    weekend_q = any(p in text for p in ("weekend", "casual", "everyday"))
+    formal_q = any(p in text for p in ("wedding", "gala", "interview", "office", "party", "date"))
+
+    if color_q and not show_q:
+        bits = [
+            f"Your reading is {undertone or 'balanced'} undertone"
+            + (f" in the {season} family" if season else "")
+            + "."
+        ]
+        if palette:
+            bits.append(f"Wear {palette} — those sit quietly on your skin.")
+        if avoid:
+            bits.append(f"Ease off {avoid}.")
+        if body:
+            bits.append(_body_line(body))
+        return " ".join(bits)
+
+    occasion = "a fashion-show walk" if show_q else (
+        "a casual weekend" if weekend_q else (
+            "a more formal moment" if formal_q else "this occasion"
+        )
+    )
+    if show_q:
+        look = (
+            f"For {occasion}, stay inside {season or 'your'} colors"
+            + (f" ({palette})" if palette else "")
+            + ". "
+            + _body_line(body)
+            + " One editorial idea: a fluid dusty-rose or taupe top with a navy or mauve column, "
+            "clean shoes, one metal or leather accent. Skip a tracksuit and skip a heavy black blazer "
+            "if it fights a soft palette."
+        )
+    elif weekend_q:
+        look = (
+            f"For {occasion}, keep {season or 'your palette'} easy: "
+            f"{palette or 'muted neutrals'} in a simple top and a continuous lower half. "
+            + _body_line(body)
+        )
+    elif formal_q:
+        look = (
+            f"For {occasion}, hold the {season or 'personal'} palette and a calm silhouette. "
+            + _body_line(body)
+            + (f" Lean on {palette}." if palette else "")
+        )
+    else:
+        look = (
+            f"{season or 'Your palette'}"
+            + (f" ({palette})" if palette else "")
+            + f" with a {body or 'balanced'} frame. "
+            + _body_line(body)
+        )
+
+    if has_recs:
+        look += f" Closest catalog pieces in this edit: {rec_line}."
+    return look
 
 
 def style_advice(
@@ -384,6 +505,7 @@ SYSTEM_AVATAR = (
     "and the best recommendation judgment in luxury retail. Analyze the person in the photo. "
     "Be specific and kind. Do not invent brand names. Never comment on attractiveness. "
     "Do not assign gender. Silhouette labels are geometric and apply to everyone. "
+    "Do not default to Light Spring — that season is overused. "
     "Return JSON only."
 )
 
@@ -393,18 +515,23 @@ def analyze_avatar_llm(image: Image.Image) -> tuple[dict, bool]:
     prompt = (
         "Analyze this person for personal styling. First read body tone from visible skin. "
         "Return JSON with keys:\n"
-        "color_season (string, e.g. Soft Autumn),\n"
+        "color_season (ONE of: Light Spring, True Spring, Bright Spring, Light Summer, "
+        "True Summer, Soft Summer, Soft Autumn, True Autumn, Deep Autumn, True Winter, "
+        "Bright Winter, Deep Winter),\n"
         "undertone (warm|cool|neutral),\n"
         "palette (array of 5 wearable color names that suit this body tone),\n"
         "avoid_colors (array of 3 color names that clash with this body tone),\n"
-        "color_notes (2 sentences on body tone: skin undertone, value, and hair/eye contrast),\n"
+        "color_notes (ONE short sentence on undertone and value),\n"
         "body_type (hourglass|pear|apple|inverted triangle|rectangle|athletic|unspecified; "
         "geometric silhouette for any gender),\n"
-        "body_notes (2 sentences on shoulder / waist / hip line only; say unspecified if the crop "
-        "is not full body; do not mention dresses unless the photo is a dress; never assign gender),\n"
-        "style_direction (2 sentences of style recommendation),\n"
-        "silhouette_tips (1–2 sentences),\n"
-        "occasions (array of 2–3 occasions).\n"
+        "body_notes (ONE short sentence on shoulder / waist / hip only; unspecified if not full body; "
+        "never assign gender),\n"
+        "style_direction (ONE short sentence of what to wear; do not repeat body_notes),\n"
+        "silhouette_tips (empty string, or one different short tip — never copy body_notes),\n"
+        "occasions (array of 2 occasions).\n"
+        "Do not default to Light Spring. Olive, golden-medium, or muted warm skin is usually "
+        "Soft Autumn or True Autumn. Cool pink skin is Summer or Winter. "
+        "Light Spring only if the coloring is clearly warm, light, and high-chroma.\n"
         "If the photo is a crop or unclear, say so honestly."
     )
     if not has_gemini():
@@ -479,10 +606,19 @@ def stylist_chat(
             f"palette={palette or 'n/a'}, "
             f"body type={analysis.get('body_type') or 'n/a'}."
         )
+        if analysis.get("body_notes"):
+            context_bits.append(str(analysis["body_notes"]))
         if analysis.get("style_direction"):
             context_bits.append(str(analysis["style_direction"]))
-    if rec_line and rec_line != "No catalog matches yet.":
-        context_bits.append(f"Catalog pieces on the table: {rec_line}.")
+    color_q = any(
+        p in (user_message or "").lower()
+        for p in ("what color", "which color", "suit me", "my palette", "undertone")
+    )
+    if rec_line and rec_line != "No catalog matches yet." and not color_q:
+        context_bits.append(
+            "Catalog pieces on the table (prefer palette matches; reject pieces that clash): "
+            f"{rec_line}."
+        )
     if images:
         context_bits.append(
             f"The shopper attached {len(list(images))} look/garment photo(s). "
@@ -491,13 +627,12 @@ def stylist_chat(
     if audio_bytes:
         context_bits.append("The shopper also sent a voice note; honor that brief.")
     context = "\n".join(context_bits)
-    fallback = (
-        "I can help with outfits, colors, and occasions. "
-        "Upload an avatar and tap Analyze for a personal color and body reading, "
-        "or ask me anything about styling."
+    fallback = local_stylist_reply(user_message, analysis, recs)
+    packed = (
+        f"{context}\n\nShopper: {user_message}\n\n"
+        "Reply as VESTURE. If a profile is present, answer from it. "
+        "Do not ask them to analyze again."
     )
-    if rec_line and rec_line != "No catalog matches yet.":
-        fallback = f"{fallback} Closest catalog pieces: {rec_line}."
     if not has_gemini():
         return fallback, False
     prior = [m for m in list(history or [])[:-1] if isinstance(m, dict)]
@@ -513,9 +648,22 @@ def stylist_chat(
             temperature=0.6,
             system_instruction=SYSTEM_CHAT,
         )
-        return text, True
+        if text and "tap Analyze" not in text and "Upload an avatar" not in text:
+            return text, True
     except Exception:
-        return fallback, False
+        pass
+    try:
+        text = _generate_text(
+            packed,
+            max_output_tokens=512,
+            temperature=0.55,
+            system_instruction=SYSTEM_CHAT,
+        )
+        if text and "tap Analyze" not in text and "Upload an avatar" not in text:
+            return text, True
+    except Exception:
+        pass
+    return fallback, False
 
 
 def _parse_json_object(text: str) -> dict:

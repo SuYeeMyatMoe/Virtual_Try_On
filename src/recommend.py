@@ -21,6 +21,27 @@ DEFAULT_EMBEDDINGS = ROOT / "data" / "embeddings.npy"
 FASHION_CLIP_ID = "Marqo/marqo-fashionCLIP"
 FALLBACK_CLIP_ID = "openai/clip-vit-base-patch32"
 
+COLOR_SYNONYMS = {
+    "navy": ["navy", "navy blue", "soft navy", "blue"],
+    "navy blue": ["navy", "navy blue", "soft navy", "blue"],
+    "soft navy": ["navy", "navy blue", "blue"],
+    "rose": ["rose", "pink", "mauve", "dusty rose"],
+    "dusty rose": ["rose", "pink", "mauve"],
+    "mauve": ["mauve", "purple", "pink", "rose", "violet"],
+    "sage": ["sage", "green", "olive", "leaf green"],
+    "taupe": ["taupe", "beige", "cream", "khaki", "camel", "brown", "tan"],
+    "lavender": ["lavender", "purple", "violet", "lilac"],
+    "powder blue": ["powder blue", "blue", "sky"],
+    "grey": ["grey", "gray", "charcoal", "soft grey"],
+    "gray": ["grey", "gray", "charcoal", "soft grey"],
+    "soft grey": ["grey", "gray", "charcoal"],
+    "cream": ["cream", "ivory", "beige", "white"],
+    "ivory": ["ivory", "cream", "white"],
+    "black": ["black", "charcoal"],
+    "olive": ["olive", "green", "sage"],
+    "camel": ["camel", "beige", "taupe", "tan", "khaki"],
+}
+
 
 def _as_vector(feats: torch.Tensor) -> np.ndarray:
     if feats.ndim > 1:
@@ -158,19 +179,23 @@ def ensure_embeddings(
     return arr
 
 
-def _color_boost(row_color: str, hints: Sequence[str]) -> float:
+def _color_boost(row_color: str, hints: Sequence[str], weight: float = 0.08) -> float:
     color = str(row_color or "").lower()
-    if not color:
+    if not color or not hints:
         return 0.0
+    color_bits = set(color.replace("-", " ").split())
+    color_bits.add(color)
     boost = 0.0
     for hint in hints:
         h = str(hint).lower().strip()
         if not h:
             continue
-        if h in color or color in h:
-            boost = max(boost, 0.08)
+        syns = COLOR_SYNONYMS.get(h, [h])
+        tokens = {h, *syns, *h.split()}
+        if any(tok in color or color in tok or tok in color_bits for tok in tokens if len(tok) > 2):
+            boost = max(boost, weight)
         elif any(part in color for part in h.split() if len(part) > 2):
-            boost = max(boost, 0.04)
+            boost = max(boost, weight * 0.5)
     return boost
 
 
@@ -196,11 +221,21 @@ def _rank_catalog(
     exclude_ids: Optional[Sequence],
     offset: int,
     color_hints: Optional[Sequence[str]],
+    color_weight: float = 0.08,
+    avoid_colors: Optional[Sequence[str]] = None,
 ) -> List[Dict[str, Any]]:
     scores = sims.copy()
     if color_hints:
         for i, row in df.iterrows():
-            scores[int(i)] = float(scores[int(i)]) + _color_boost(row.get("color", ""), color_hints)
+            scores[int(i)] = float(scores[int(i)]) + _color_boost(
+                row.get("color", ""), color_hints, weight=color_weight
+            )
+    if avoid_colors:
+        avoid_bits = {str(a).lower().strip() for a in avoid_colors if str(a).strip()}
+        for i, row in df.iterrows():
+            color = str(row.get("color") or "").lower()
+            if any(a in color or color in a for a in avoid_bits if len(a) > 2):
+                scores[int(i)] = float(scores[int(i)]) - color_weight
     skip = {str(x) for x in (exclude_ids or [])}
     order = np.argsort(-scores)
     results: List[Dict[str, Any]] = []
@@ -210,8 +245,8 @@ def _rank_catalog(
         item_id = str(row.get("id", idx))
         if item_id in skip:
             continue
-        sim = float(sims[int(idx)])
-        if sim < min_sim:
+        sim = float(scores[int(idx)])
+        if float(sims[int(idx)]) < min_sim:
             continue
         if skipped < offset:
             skipped += 1
@@ -231,6 +266,8 @@ def recommend_top_k(
     exclude_ids: Optional[Sequence] = None,
     offset: int = 0,
     color_hints: Optional[Sequence[str]] = None,
+    color_weight: float = 0.08,
+    avoid_colors: Optional[Sequence[str]] = None,
 ) -> List[Dict[str, Any]]:
     """Return Top-k catalog items with cosine similarity confidence."""
     df, emb = load_catalog(csv_path, emb_path)
@@ -239,7 +276,9 @@ def recommend_top_k(
     q = embed_image(query_image)
     q = q / (np.linalg.norm(q) + 1e-8)
     sims = emb @ q
-    return _rank_catalog(sims, df, k, min_sim, exclude_ids, offset, color_hints)
+    return _rank_catalog(
+        sims, df, k, min_sim, exclude_ids, offset, color_hints, color_weight, avoid_colors
+    )
 
 
 def recommend_from_text(
@@ -249,6 +288,8 @@ def recommend_from_text(
     emb_path: Path = DEFAULT_EMBEDDINGS,
     exclude_ids: Optional[Sequence] = None,
     color_hints: Optional[Sequence[str]] = None,
+    color_weight: float = 0.25,
+    avoid_colors: Optional[Sequence[str]] = None,
 ) -> List[Dict[str, Any]]:
     """Rank catalog items from a natural-language style request."""
     df, emb = load_catalog(csv_path, emb_path)
@@ -257,7 +298,9 @@ def recommend_from_text(
     if q is not None:
         q = q / (np.linalg.norm(q) + 1e-8)
         sims = emb @ q
-        return _rank_catalog(sims, df, k, 0.0, exclude_ids, 0, color_hints)
+        return _rank_catalog(
+            sims, df, k, 0.0, exclude_ids, 0, color_hints, color_weight, avoid_colors
+        )
 
     skip = {str(x) for x in (exclude_ids or [])}
     tokens = [t for t in query.lower().replace(",", " ").split() if len(t) > 2]

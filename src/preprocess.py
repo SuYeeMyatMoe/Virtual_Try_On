@@ -8,6 +8,44 @@ import numpy as np
 from PIL import Image, ImageOps
 
 
+REGION_ALIASES = {
+    "upper": "upper",
+    "upper body": "upper",
+    "top": "upper",
+    "tops": "upper",
+    "shirt": "upper",
+    "blouse": "upper",
+    "lower": "lower",
+    "lower body": "lower",
+    "low": "lower",
+    "bottom": "lower",
+    "bottoms": "lower",
+    "pant": "lower",
+    "pants": "lower",
+    "jean": "lower",
+    "jeans": "lower",
+    "skirt": "lower",
+    "trousers": "lower",
+    "shorts": "lower",
+    "dress": "dress",
+    "overall": "dress",
+    "full": "dress",
+    "gown": "dress",
+}
+
+
+def normalize_garment_region(category: str | None) -> str:
+    """Map UI / catalog / aliases onto upper | lower | dress."""
+    key = str(category or "upper").strip().lower()
+    if key in REGION_ALIASES:
+        return REGION_ALIASES[key]
+    if any(word in key for word in ("pant", "jean", "skirt", "trouser", "short", "bottom")):
+        return "lower"
+    if "dress" in key or "gown" in key:
+        return "dress"
+    return "upper"
+
+
 PERSON_SIZE = (768, 1024)  # width, height
 FAST_SIZE = (384, 512)
 GARMENT_SIZE = (512, 512)
@@ -81,15 +119,13 @@ def build_garment_prompt(
         parts.append(color.strip())
     if style:
         parts.append(style.strip())
-    cat = (category or "clothing").strip().lower()
+    cat = normalize_garment_region(category)
     mapping = {
         "upper": "shirt or blouse on the upper body",
-        "lower": "pants or skirt on the lower body",
+        "lower": "pants or skirt on the legs, not a top",
         "dress": "dress covering the body",
-        "upper body": "shirt or blouse on the upper body",
-        "lower body": "pants or skirt on the lower body",
     }
-    parts.append(mapping.get(cat, cat))
+    parts.append(mapping[cat])
     if extra:
         parts.append(extra.strip())
     prompt = ", ".join(p for p in parts if p)
