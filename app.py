@@ -481,6 +481,17 @@ def _inject_css():
             width:100% !important; aspect-ratio:3 / 4 !important;
             object-fit:cover !important; height:auto !important;
         }
+        .wishlist-tile div[data-testid="stImage"] img{
+            max-height:132px !important;
+            width:100% !important;
+            aspect-ratio:3 / 4 !important;
+            object-fit:cover !important;
+        }
+        .wishlist-tile p, .wishlist-tile [data-testid="stMarkdownContainer"] p{
+            font-size:.78rem !important;
+            line-height:1.25 !important;
+            margin-bottom:.15rem !important;
+        }
         div[data-testid="stImageCaption"], div[data-testid="stImage"] figcaption{
             font-family:'JetBrains Mono', monospace; font-size:.72rem !important;
             letter-spacing:.06em; text-transform:uppercase; color:var(--ink-faint) !important;
@@ -1200,7 +1211,30 @@ def _toggle_wish(item_id: str) -> None:
     _write_wishlist_file(wish)
 
 
-def _render_saved_pieces(*, key_prefix: str) -> None:
+def _on_toggle_wish(item_id: str, title: str = "") -> None:
+    item_id = str(item_id)
+    already = item_id in _ensure_wishlist()
+    _toggle_wish(item_id)
+    name = title or "this piece"
+    if already:
+        msg = f"Removed “{name}” from saved pieces."
+        st.toast(msg, icon=":material/bookmark_remove:")
+        st.session_state["wish_notice"] = ("removed", msg)
+    else:
+        msg = f"Saved “{name}”. Open Profile → Saved pieces to view it."
+        st.toast(msg, icon=":material/bookmark:")
+        st.session_state["wish_notice"] = ("saved", msg)
+
+
+def _render_saved_pieces(*, key_prefix: str, compact: bool = False) -> None:
+    notice = st.session_state.pop("wish_notice", None)
+    if isinstance(notice, tuple) and len(notice) == 2:
+        kind, msg = notice
+        if kind == "removed":
+            st.info(msg, icon=":material/bookmark_remove:")
+        else:
+            st.success(msg, icon=":material/bookmark:")
+
     wish = _ensure_wishlist()
     if not wish:
         st.caption("Nothing saved yet. Tap Save on a catalog piece.")
@@ -1213,18 +1247,27 @@ def _render_saved_pieces(*, key_prefix: str) -> None:
     if saved.empty:
         st.caption("Saved IDs were not found in the catalog. Try Save again on a shop piece.")
         return
-    cols = st.columns(min(5, max(1, len(saved))))
+
+    n_cols = 6 if compact else 4
+    max_width = 140 if compact else 220
+    cols = st.columns(min(n_cols, max(1, len(saved))), gap="small")
     for col, row in zip(cols, saved.itertuples(index=False)):
         img_path = ROOT / str(row.image_path)
         with col:
+            st.markdown('<div class="wishlist-tile">', unsafe_allow_html=True)
             if img_path.exists():
-                _show_photo(img_path, max_width=560)
+                _show_photo(img_path, max_width=max_width, aspect=(3, 4))
             st.markdown(f"**{row.title}**")
             st.caption(f"{row.category} · {row.color}")
-            if st.button("Remove", key=f"{key_prefix}_{row.id}"):
-                _toggle_wish(str(row.id))
-                st.rerun()
-            st.link_button("Buy / Find online", str(row.shop_url), width="stretch")
+            st.button(
+                "Remove",
+                key=f"{key_prefix}_{row.id}",
+                width="stretch",
+                on_click=_on_toggle_wish,
+                args=(str(row.id), str(row.title)),
+            )
+            st.link_button("Buy", str(row.shop_url), width="stretch")
+            st.markdown("</div>", unsafe_allow_html=True)
 
 
 def _go_studio_with_garment(img_path: Path | str, title: str) -> None:
@@ -1342,10 +1385,6 @@ def catalog_tab():
 
     _catalog_grid()
 
-    st.markdown('<hr class="hr-rule" />', unsafe_allow_html=True)
-    _section_head("Wishlist", "Saved pieces", "Pieces you saved from this shop. They also appear on Profile.")
-    _render_saved_pieces(key_prefix="cat_wish_rm")
-
 
 @st.fragment
 def _catalog_featured() -> None:
@@ -1385,34 +1424,42 @@ def _catalog_grid() -> None:
     st.caption(f"{len(df)} pieces in this edit")
     if df.empty:
         st.info("No pieces in this category.")
-        return
-    wish = _ensure_wishlist()
-    n_cols = 3
-    cols = st.columns(n_cols, gap="medium")
-    for i, row in enumerate(df.itertuples(index=False)):
-        item_id = str(row.id)
-        img_path = ROOT / str(row.image_path)
-        with cols[i % n_cols]:
-            st.markdown('<div class="product-card catalog-tile">', unsafe_allow_html=True)
-            if img_path.exists():
-                _show_photo(img_path, max_width=720, aspect=(3, 4))
-            st.markdown(
-                f"""
-                <div class="product-title">{row.title}</div>
-                <div class="product-meta">{row.category} · {row.color}</div>
-                """,
-                unsafe_allow_html=True,
-            )
-            saved = item_id in wish
-            with st.container(horizontal=True, gap="small"):
-                if st.button("Try in Studio", key=f"cat_try_{item_id}", width="stretch"):
-                    _go_studio_with_garment(img_path, str(row.title))
-                label = "Saved" if saved else "Save"
-                if st.button(label, key=f"cat_wish_{item_id}", width="stretch"):
-                    _toggle_wish(item_id)
-                    st.rerun()
-                st.link_button("Buy", str(row.shop_url), width="stretch")
-            st.markdown("</div>", unsafe_allow_html=True)
+    else:
+        wish = _ensure_wishlist()
+        n_cols = 3
+        cols = st.columns(n_cols, gap="medium")
+        for i, row in enumerate(df.itertuples(index=False)):
+            item_id = str(row.id)
+            img_path = ROOT / str(row.image_path)
+            with cols[i % n_cols]:
+                st.markdown('<div class="product-card catalog-tile">', unsafe_allow_html=True)
+                if img_path.exists():
+                    _show_photo(img_path, max_width=720, aspect=(3, 4))
+                st.markdown(
+                    f"""
+                    <div class="product-title">{row.title}</div>
+                    <div class="product-meta">{row.category} · {row.color}</div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+                saved = item_id in wish
+                with st.container(horizontal=True, gap="small"):
+                    if st.button("Try in Studio", key=f"cat_try_{item_id}", width="stretch"):
+                        _go_studio_with_garment(img_path, str(row.title))
+                    label = "Saved" if saved else "Save"
+                    st.button(
+                        label,
+                        key=f"cat_wish_{item_id}",
+                        width="stretch",
+                        on_click=_on_toggle_wish,
+                        args=(item_id, str(row.title)),
+                    )
+                    st.link_button("Buy", str(row.shop_url), width="stretch")
+                st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown('<hr class="hr-rule" />', unsafe_allow_html=True)
+    st.markdown("**Saved pieces**")
+    _render_saved_pieces(key_prefix="cat_wish_rm", compact=True)
 
 
 def _stylist_more(avatar: Image.Image, analysis: dict) -> list:
@@ -1805,8 +1852,8 @@ def profile_tab():
         st.info("No try-on in this session yet. Generate one in Studio.")
 
     st.markdown('<hr class="hr-rule" />', unsafe_allow_html=True)
-    _section_head("Wishlist", "Saved pieces")
-    _render_saved_pieces(key_prefix="wish_rm")
+    _section_head("Wishlist", "Saved pieces", "Compact bookmarks from Catalog. Tap Remove to drop a piece.")
+    _render_saved_pieces(key_prefix="wish_rm", compact=True)
 
 
 def _render_topbar(home, studio, catalog, stylist, profile) -> None:
