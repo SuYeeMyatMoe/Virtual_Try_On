@@ -175,6 +175,21 @@ def _nav_logo_uri() -> str | None:
     return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
 
 
+@st.cache_data(max_entries=80, show_spinner=False)
+def _square_thumb(src: str, size: int = 240, quality: int = 88, _mtime: float = 0.0) -> bytes:
+    """Sharp square thumbnail (2x pixels for a 120px tile)."""
+    img = Image.open(src).convert("RGB")
+    w, h = img.size
+    side = min(w, h)
+    left = (w - side) // 2
+    top = (h - side) // 2
+    img = img.crop((left, top, left + side, top + side))
+    img = img.resize((size, size), Image.Resampling.LANCZOS)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=quality, optimize=True)
+    return buf.getvalue()
+
+
 def _show_photo(
     path: Path, *, max_width: int = 720, width="stretch", aspect: tuple[int, int] | None = None
 ) -> None:
@@ -257,7 +272,12 @@ def _inject_css():
                 radial-gradient(circle at 92% 8%, rgba(16,185,129,.08), transparent 38%);
         }
 
-        header[data-testid="stHeader"]{ display:none !important; }
+        header[data-testid="stHeader"]{
+            background:transparent !important;
+            border:none !important;
+        }
+        header[data-testid="stHeader"] [data-testid="stToolbar"],
+        header[data-testid="stHeader"] [data-testid="stDecoration"],
         div[data-testid="stDecoration"],
         div[data-testid="stToolbar"],
         div[data-testid="stStatusWidget"],
@@ -266,6 +286,11 @@ def _inject_css():
         [data-testid="StyledFullScreenButton"],
         button[title="View fullscreen"],
         .stAppToolbar{ display:none !important; }
+        [data-testid="stToastContainer"]{
+            display:flex !important;
+            visibility:visible !important;
+            z-index:999999 !important;
+        }
 
         .block-container{
             padding-top:1.4rem;
@@ -481,10 +506,14 @@ def _inject_css():
             width:100% !important; aspect-ratio:3 / 4 !important;
             object-fit:cover !important; height:auto !important;
         }
-        .wishlist-tile div[data-testid="stImage"] img{
-            max-height:132px !important;
-            width:100% !important;
-            aspect-ratio:3 / 4 !important;
+        .wishlist-tile div[data-testid="stImage"],
+        .wishlist-tile div[data-testid="stImage"] > img,
+        .wishlist-tile img{
+            width:120px !important;
+            height:120px !important;
+            max-width:120px !important;
+            max-height:120px !important;
+            aspect-ratio:1 / 1 !important;
             object-fit:cover !important;
         }
         .wishlist-tile p, .wishlist-tile [data-testid="stMarkdownContainer"] p{
@@ -1208,33 +1237,41 @@ def _toggle_wish(item_id: str) -> None:
     else:
         wish.append(item_id)
     st.session_state.wishlist = wish
-    _write_wishlist_file(wish)
+    try:
+        _write_wishlist_file(wish)
+    except Exception:
+        pass
 
 
-def _on_toggle_wish(item_id: str, title: str = "") -> None:
+def _save_piece(item_id: str, title: str = "") -> None:
     item_id = str(item_id)
     already = item_id in _ensure_wishlist()
     _toggle_wish(item_id)
     name = title or "this piece"
     if already:
-        msg = f"Removed “{name}” from saved pieces."
-        st.toast(msg, icon=":material/bookmark_remove:")
-        st.session_state["wish_notice"] = ("removed", msg)
+        st.session_state["wish_notice"] = ("removed", f"Removed “{name}” from saved pieces.")
     else:
-        msg = f"Saved “{name}”. Open Profile → Saved pieces to view it."
-        st.toast(msg, icon=":material/bookmark:")
-        st.session_state["wish_notice"] = ("saved", msg)
+        st.session_state["wish_notice"] = (
+            "saved",
+            f"Saved “{name}”. Find it under Saved pieces below, and on Profile.",
+        )
+
+
+def _flush_wish_notice(slot=None) -> None:
+    notice = st.session_state.pop("wish_notice", None)
+    if not (isinstance(notice, tuple) and len(notice) == 2):
+        return
+    kind, msg = notice
+    icon = ":material/bookmark:" if kind == "saved" else ":material/bookmark_remove:"
+    st.toast(msg, icon=icon, duration="long")
+    target = slot if slot is not None else st
+    if kind == "saved":
+        target.success(msg, icon=icon)
+    else:
+        target.info(msg, icon=icon)
 
 
 def _render_saved_pieces(*, key_prefix: str, compact: bool = False) -> None:
-    notice = st.session_state.pop("wish_notice", None)
-    if isinstance(notice, tuple) and len(notice) == 2:
-        kind, msg = notice
-        if kind == "removed":
-            st.info(msg, icon=":material/bookmark_remove:")
-        else:
-            st.success(msg, icon=":material/bookmark:")
-
     wish = _ensure_wishlist()
     if not wish:
         st.caption("Nothing saved yet. Tap Save on a catalog piece.")
@@ -1248,26 +1285,25 @@ def _render_saved_pieces(*, key_prefix: str, compact: bool = False) -> None:
         st.caption("Saved IDs were not found in the catalog. Try Save again on a shop piece.")
         return
 
-    n_cols = 6 if compact else 4
-    max_width = 140 if compact else 220
-    cols = st.columns(min(n_cols, max(1, len(saved))), gap="small")
-    for col, row in zip(cols, saved.itertuples(index=False)):
-        img_path = ROOT / str(row.image_path)
-        with col:
-            st.markdown('<div class="wishlist-tile">', unsafe_allow_html=True)
-            if img_path.exists():
-                _show_photo(img_path, max_width=max_width, aspect=(3, 4))
-            st.markdown(f"**{row.title}**")
-            st.caption(f"{row.category} · {row.color}")
-            st.button(
-                "Remove",
-                key=f"{key_prefix}_{row.id}",
-                width="stretch",
-                on_click=_on_toggle_wish,
-                args=(str(row.id), str(row.title)),
-            )
-            st.link_button("Buy", str(row.shop_url), width="stretch")
-            st.markdown("</div>", unsafe_allow_html=True)
+    rows = list(saved.itertuples(index=False))
+    n_cols = 6
+    for start in range(0, len(rows), n_cols):
+        cols = st.columns(n_cols, gap="small")
+        for col, row in zip(cols, rows[start : start + n_cols]):
+            img_path = ROOT / str(row.image_path)
+            with col:
+                st.markdown('<div class="wishlist-tile">', unsafe_allow_html=True)
+                if img_path.exists():
+                    st.image(
+                        _square_thumb(str(img_path), size=240, _mtime=_source_mtime(img_path)),
+                        width=120,
+                    )
+                st.markdown(f"**{row.title}**")
+                st.caption(f"{row.category} · {row.color}")
+                if st.button("Remove", key=f"{key_prefix}_{row.id}", width="stretch"):
+                    _save_piece(str(row.id), str(row.title))
+                st.link_button("Buy", str(row.shop_url), width="stretch")
+                st.markdown("</div>", unsafe_allow_html=True)
 
 
 def _go_studio_with_garment(img_path: Path | str, title: str) -> None:
@@ -1363,6 +1399,7 @@ def catalog_tab():
         "Catalog",
         "Browse the VESTURE edit — try a piece in Studio, save it, or shop it online.",
     )
+    notice_slot = st.empty()
 
     _section_head(
         "Digital exclusive",
@@ -1383,7 +1420,7 @@ def catalog_tab():
             st.success("Catalog created. Refresh this page.")
         return
 
-    _catalog_grid()
+    _catalog_grid(notice_slot)
 
 
 @st.fragment
@@ -1394,8 +1431,7 @@ def _catalog_featured() -> None:
             _show_look(look, key_prefix="cat_feat", max_width=720, aspect=(3, 4))
 
 
-@st.fragment
-def _catalog_grid() -> None:
+def _catalog_grid(notice_slot=None) -> None:
     df = _load_catalog(CATALOG_CSV.stat().st_mtime)
     df = df[~df["id"].astype(str).str.startswith("VE")]
     df = df[~df["color"].astype(str).str.lower().eq("white")]
@@ -1408,7 +1444,7 @@ def _catalog_grid() -> None:
     st.html(
         """
         <style>
-        div[data-testid="stImage"] img{
+        .catalog-tile div[data-testid="stImage"] img{
             width:100% !important;
             aspect-ratio:3 / 4 !important;
             object-fit:cover !important;
@@ -1447,19 +1483,16 @@ def _catalog_grid() -> None:
                     if st.button("Try in Studio", key=f"cat_try_{item_id}", width="stretch"):
                         _go_studio_with_garment(img_path, str(row.title))
                     label = "Saved" if saved else "Save"
-                    st.button(
-                        label,
-                        key=f"cat_wish_{item_id}",
-                        width="stretch",
-                        on_click=_on_toggle_wish,
-                        args=(item_id, str(row.title)),
-                    )
+                    if st.button(label, key=f"cat_wish_{item_id}", width="stretch"):
+                        _save_piece(item_id, str(row.title))
                     st.link_button("Buy", str(row.shop_url), width="stretch")
                 st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown('<hr class="hr-rule" />', unsafe_allow_html=True)
+    _flush_wish_notice(slot=notice_slot)
     st.markdown("**Saved pieces**")
     _render_saved_pieces(key_prefix="cat_wish_rm", compact=True)
+    _flush_wish_notice(slot=notice_slot)
 
 
 def _stylist_more(avatar: Image.Image, analysis: dict) -> list:
@@ -1853,7 +1886,9 @@ def profile_tab():
 
     st.markdown('<hr class="hr-rule" />', unsafe_allow_html=True)
     _section_head("Wishlist", "Saved pieces", "Compact bookmarks from Catalog. Tap Remove to drop a piece.")
+    _flush_wish_notice()
     _render_saved_pieces(key_prefix="wish_rm", compact=True)
+    _flush_wish_notice()
 
 
 def _render_topbar(home, studio, catalog, stylist, profile) -> None:
