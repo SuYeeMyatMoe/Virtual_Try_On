@@ -1246,15 +1246,26 @@ def _toggle_wish(item_id: str) -> None:
 def _save_piece(item_id: str, title: str = "") -> None:
     item_id = str(item_id)
     already = item_id in _ensure_wishlist()
+    if already:
+        return
     _toggle_wish(item_id)
     name = title or "this piece"
-    if already:
-        st.session_state["wish_notice"] = ("removed", f"Removed “{name}” from saved pieces.")
-    else:
-        st.session_state["wish_notice"] = (
-            "saved",
-            f"Saved “{name}”. Find it under Saved pieces below, and on Profile.",
-        )
+    st.session_state["wish_notice"] = ("saved", f"Saved “{name}” to Catalog.")
+
+
+def _remove_piece(item_id: str, title: str = "") -> None:
+    item_id = str(item_id)
+    wish = _ensure_wishlist()
+    if item_id not in wish:
+        return
+    wish.remove(item_id)
+    st.session_state.wishlist = wish
+    try:
+        _write_wishlist_file(wish)
+    except Exception:
+        pass
+    name = title or "this piece"
+    st.session_state["wish_notice"] = ("removed", f"Removed “{name}” from saved pieces.")
 
 
 def _flush_wish_notice(slot=None) -> None:
@@ -1300,8 +1311,13 @@ def _render_saved_pieces(*, key_prefix: str, compact: bool = False) -> None:
                     )
                 st.markdown(f"**{row.title}**")
                 st.caption(f"{row.category} · {row.color}")
-                if st.button("Remove", key=f"{key_prefix}_{row.id}", width="stretch"):
-                    _save_piece(str(row.id), str(row.title))
+                st.button(
+                    "Remove",
+                    key=f"{key_prefix}_{row.id}",
+                    width="stretch",
+                    on_click=_remove_piece,
+                    args=(str(row.id), str(row.title)),
+                )
                 st.link_button("Buy", str(row.shop_url), width="stretch")
                 st.markdown("</div>", unsafe_allow_html=True)
 
@@ -1420,7 +1436,8 @@ def catalog_tab():
             st.success("Catalog created. Refresh this page.")
         return
 
-    _catalog_grid(notice_slot)
+    _catalog_grid()
+    _flush_wish_notice(slot=notice_slot)
 
 
 @st.fragment
@@ -1431,7 +1448,7 @@ def _catalog_featured() -> None:
             _show_look(look, key_prefix="cat_feat", max_width=720, aspect=(3, 4))
 
 
-def _catalog_grid(notice_slot=None) -> None:
+def _catalog_grid() -> None:
     df = _load_catalog(CATALOG_CSV.stat().st_mtime)
     df = df[~df["id"].astype(str).str.startswith("VE")]
     df = df[~df["color"].astype(str).str.lower().eq("white")]
@@ -1483,16 +1500,15 @@ def _catalog_grid(notice_slot=None) -> None:
                     if st.button("Try in Studio", key=f"cat_try_{item_id}", width="stretch"):
                         _go_studio_with_garment(img_path, str(row.title))
                     label = "Saved" if saved else "Save"
-                    if st.button(label, key=f"cat_wish_{item_id}", width="stretch"):
-                        _save_piece(item_id, str(row.title))
+                    st.button(
+                        label,
+                        key=f"cat_wish_{item_id}",
+                        width="stretch",
+                        on_click=_save_piece if not saved else _remove_piece,
+                        args=(item_id, str(row.title)),
+                    )
                     st.link_button("Buy", str(row.shop_url), width="stretch")
                 st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown('<hr class="hr-rule" />', unsafe_allow_html=True)
-    _flush_wish_notice(slot=notice_slot)
-    st.markdown("**Saved pieces**")
-    _render_saved_pieces(key_prefix="cat_wish_rm", compact=True)
-    _flush_wish_notice(slot=notice_slot)
 
 
 def _stylist_more(avatar: Image.Image, analysis: dict) -> list:
@@ -1888,7 +1904,6 @@ def profile_tab():
     _section_head("Wishlist", "Saved pieces", "Compact bookmarks from Catalog. Tap Remove to drop a piece.")
     _flush_wish_notice()
     _render_saved_pieces(key_prefix="wish_rm", compact=True)
-    _flush_wish_notice()
 
 
 def _render_topbar(home, studio, catalog, stylist, profile) -> None:
