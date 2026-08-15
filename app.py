@@ -33,6 +33,7 @@ from src.stylist import (
     compact_body_copy,
     interpret_chat,
     reply_to_shopper,
+    resolve_presentation,
     swatch_hex,
 )
 from src.tryon import list_demo_pairs, try_on_vton
@@ -1674,6 +1675,24 @@ def _handle_stylist_prompt(
     studio_item = None
     search_image = images[0] if images else avatar
 
+    if images:
+        has_profile = bool(
+            analysis.get("color_season") or analysis.get("body_type") or analysis.get("palette")
+        )
+        has_dept = resolve_presentation("", analysis) in ("man", "woman")
+        if not has_profile or not has_dept:
+            try:
+                look_analysis = analyze_avatar(images[0])
+                if not has_profile:
+                    analysis = look_analysis
+                    st.session_state["stylist_analysis"] = analysis
+                elif resolve_presentation("", analysis) not in ("man", "woman"):
+                    look_pres = look_analysis.get("presentation")
+                    if look_pres in ("man", "woman"):
+                        analysis = {**analysis, "presentation": look_pres}
+            except Exception:
+                pass
+
     if intent["action"] == "more" and search_image is not None:
         try:
             new_recs = _stylist_more(search_image, analysis)
@@ -1688,6 +1707,7 @@ def _handle_stylist_prompt(
                 analysis,
                 k=5,
                 exclude_ids=st.session_state.get("stylist_shown_ids") or [],
+                image=search_image,
             )
         except Exception:
             new_recs = []
@@ -1774,11 +1794,11 @@ def stylist_tab():
                 st.rerun()
 
         presentation = st.selectbox(
-            "Silhouette style",
-            ["Neutral", "Woman", "Man"],
+            "Shop for",
+            ["Auto (from photo)", "Woman", "Man"],
             index=0,
-            key="stylist_presentation",
-            help="Changes the icon drawing only. The app never infers gender from the photo.",
+            key="stylist_shop_for",
+            help="Auto reads menswear vs womenswear from the avatar. Override if the read is wrong.",
         )
         analyze = st.button("Analyze", type="primary", width="stretch")
         if avatar is None:
@@ -1796,13 +1816,16 @@ def stylist_tab():
                 except Exception:
                     label_map = None
                 analysis = analyze_avatar(avatar, label_map=label_map)
+                chosen = resolve_presentation(presentation, analysis)
+                if chosen in ("man", "woman"):
+                    analysis["presentation"] = chosen
                 recs = catalog_for_avatar(avatar, analysis, k=5)
             except Exception as exc:
                 st.error(f"Stylist failed: {exc}")
                 return
         st.session_state["stylist_analysis"] = analysis
         st.session_state["stylist_label_map"] = label_map
-        _refresh_stylist_boards(avatar, analysis, presentation)
+        _refresh_stylist_boards(avatar, analysis, chosen if chosen in ("man", "woman") else presentation)
         st.session_state["stylist_shown_ids"] = []
         st.session_state["stylist_all_recs"] = []
         _remember_recs(recs)
@@ -1811,11 +1834,19 @@ def stylist_tab():
         body = analysis.get("body_type") or "silhouette"
         palette = [str(c) for c in (analysis.get("palette") or []) if str(c).strip()]
         palette_line = ", ".join(palette[:5]) if palette else "your recommended set"
+        dept = analysis.get("presentation")
+        dept_line = (
+            "Shopping menswear. "
+            if dept == "man"
+            else "Shopping womenswear. "
+            if dept == "woman"
+            else ""
+        )
         st.session_state["stylist_messages"] = [
             {
                 "role": "assistant",
                 "content": (
-                    f"Body tone reads {undertone} ({season}) with a {body} frame. "
+                    f"{dept_line}Body tone reads {undertone} ({season}) with a {body} frame. "
                     f"A suitable color set is {palette_line}. "
                     "Ask for more recommendations, a weekend outfit, or say “try the top match in Studio.”"
                 ),
@@ -1823,12 +1854,10 @@ def stylist_tab():
         ]
 
     analysis = st.session_state.get("stylist_analysis")
-    if (
-        analysis
-        and avatar is not None
-        and st.session_state.get("stylist_board_presentation") != presentation
-    ):
-        _refresh_stylist_boards(avatar, analysis, presentation)
+    if analysis and avatar is not None:
+        board_style = resolve_presentation(presentation, analysis)
+        if st.session_state.get("stylist_board_presentation") != board_style:
+            _refresh_stylist_boards(avatar, analysis, board_style)
 
     if analysis:
         season = str(analysis.get("color_season") or "Unspecified")
@@ -1862,8 +1891,16 @@ def stylist_tab():
                 st.markdown('<div class="analysis-card">', unsafe_allow_html=True)
                 st.markdown('<p class="analysis-kicker">02 // Silhouette</p>', unsafe_allow_html=True)
                 st.markdown("**Body type & style**")
+                dept = resolve_presentation("", analysis)
+                dept_pill = (
+                    _pill("menswear", "ok")
+                    if dept == "man"
+                    else _pill("womenswear", "ok")
+                    if dept == "woman"
+                    else ""
+                )
                 st.markdown(
-                    _pill(str(analysis.get("body_type") or "unspecified"), "ok"),
+                    f"{_pill(str(analysis.get('body_type') or 'unspecified'), 'ok')} {dept_pill}",
                     unsafe_allow_html=True,
                 )
                 body_copy = compact_body_copy(analysis, max_sentences=3)
@@ -1899,7 +1936,7 @@ def stylist_tab():
         _section_head(
             "Styled for you",
             "Try these looks",
-            "Catalog pieces ranked to your avatar and recommended color set. Send any piece to Studio.",
+            "Catalog pieces ranked to your avatar, clothing department, body type, and color set. Send any piece to Studio.",
         )
         _render_stylist_looks(st.session_state.get("stylist_recs") or [], key_prefix="sty_try")
         more_col, studio_col = st.columns(2)

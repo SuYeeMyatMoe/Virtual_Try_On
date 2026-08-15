@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 from urllib.parse import quote_plus
 
+import re
+
 import numpy as np
 import pandas as pd
 import torch
@@ -41,6 +43,13 @@ COLOR_SYNONYMS = {
     "olive": ["olive", "green", "sage"],
     "camel": ["camel", "beige", "taupe", "tan", "khaki"],
 }
+
+_WOMAN_RE = re.compile(r"\b(women|woman|womens|ladies|lady|girls?|girl's)\b", re.I)
+_MAN_RE = re.compile(r"\b(men|mens|man's|male|boys?|boy's)\b", re.I)
+_KIDS_RE = re.compile(r"\b(kids?|kid's|teen|girls?|boys?|boy's|girl's)\b", re.I)
+_WOMAN_GARMENT_RE = re.compile(
+    r"\b(dress|skirt|gown|kurti|jumpsuit|blouse|legging|leggings)\b", re.I
+)
 
 
 def _as_vector(feats: torch.Tensor) -> np.ndarray:
@@ -137,6 +146,77 @@ def embed_text(text: str) -> Optional[np.ndarray]:
         return None
 
 
+def catalog_audience(title: str, category: str = "") -> str:
+    """menswear / womenswear / unisex from catalog title and category."""
+    blob = f"{title} {category}"
+    woman = bool(_WOMAN_RE.search(blob))
+    man = bool(_MAN_RE.search(blob))
+    if woman and not man:
+        return "woman"
+    if man and not woman:
+        return "man"
+    if str(category or "").strip().lower() == "dress" or _WOMAN_GARMENT_RE.search(str(title or "")):
+        return "woman"
+    return "unisex"
+
+
+def is_kidswear(title: str) -> bool:
+    return bool(_KIDS_RE.search(str(title or "")))
+
+
+def infer_clothing_audience(image: Image.Image) -> str:
+    """Zero-shot CLIP: man vs woman from the uploaded photo."""
+    try:
+        img = embed_image(image)
+        img = img / (np.linalg.norm(img) + 1e-8)
+        man_prompts = (
+            "a photograph of a man",
+            "a male model wearing menswear",
+            "menswear outfit on a man",
+        )
+        woman_prompts = (
+            "a photograph of a woman",
+            "a female model wearing womenswear",
+            "womenswear outfit on a woman",
+        )
+
+        def _best(prompts: Sequence[str]) -> float:
+            best = -1.0
+            for text in prompts:
+                vec = embed_text(text)
+                if vec is None:
+                    continue
+                vec = vec / (np.linalg.norm(vec) + 1e-8)
+                best = max(best, float(np.dot(img, vec)))
+            return best
+
+        man = _best(man_prompts)
+        woman = _best(woman_prompts)
+        if man < 0 and woman < 0:
+            return "unisex"
+        if man - woman > 0.008:
+            return "man"
+        if woman - man > 0.008:
+            return "woman"
+    except Exception:
+        pass
+    return "unisex"
+
+
+def _audience_ok(title: str, category: str, want: Optional[str]) -> bool:
+    key = str(want or "").strip().lower()
+    if key in {"", "neutral", "unisex", "auto"}:
+        return True
+    if is_kidswear(title):
+        return False
+    got = catalog_audience(title, category)
+    if key in {"man", "male", "men", "menswear"}:
+        return got in {"man", "unisex"}
+    if key in {"woman", "female", "women", "womenswear"}:
+        return got in {"woman", "unisex"}
+    return True
+
+
 def shop_url_for(title: str, existing: Optional[str] = None) -> str:
     if existing and str(existing).startswith("http"):
         return str(existing)
@@ -223,8 +303,10 @@ def _rank_catalog(
     color_hints: Optional[Sequence[str]],
     color_weight: float = 0.08,
     avoid_colors: Optional[Sequence[str]] = None,
+    audience: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     scores = sims.copy()
+    want = str(audience or "").strip().lower()
     if color_hints:
         for i, row in df.iterrows():
             scores[int(i)] = float(scores[int(i)]) + _color_boost(
@@ -236,6 +318,12 @@ def _rank_catalog(
             color = str(row.get("color") or "").lower()
             if any(a in color or color in a for a in avoid_bits if len(a) > 2):
                 scores[int(i)] = float(scores[int(i)]) - color_weight
+    if want in {"man", "male", "men", "menswear", "woman", "female", "women", "womenswear"}:
+        target = "man" if want in {"man", "male", "men", "menswear"} else "woman"
+        for i, row in df.iterrows():
+            got = catalog_audience(str(row.get("title", "")), str(row.get("category", "")))
+            if got == target:
+                scores[int(i)] = float(scores[int(i)]) + 0.05
     skip = {str(x) for x in (exclude_ids or [])}
     order = np.argsort(-scores)
     results: List[Dict[str, Any]] = []
@@ -244,6 +332,8 @@ def _rank_catalog(
         row = df.iloc[int(idx)]
         item_id = str(row.get("id", idx))
         if item_id in skip:
+            continue
+        if not _audience_ok(str(row.get("title", "")), str(row.get("category", "")), want):
             continue
         sim = float(scores[int(idx)])
         if float(sims[int(idx)]) < min_sim:
@@ -268,6 +358,7 @@ def recommend_top_k(
     color_hints: Optional[Sequence[str]] = None,
     color_weight: float = 0.08,
     avoid_colors: Optional[Sequence[str]] = None,
+    audience: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """Return Top-k catalog items with cosine similarity confidence."""
     df, emb = load_catalog(csv_path, emb_path)
@@ -277,7 +368,16 @@ def recommend_top_k(
     q = q / (np.linalg.norm(q) + 1e-8)
     sims = emb @ q
     return _rank_catalog(
-        sims, df, k, min_sim, exclude_ids, offset, color_hints, color_weight, avoid_colors
+        sims,
+        df,
+        k,
+        min_sim,
+        exclude_ids,
+        offset,
+        color_hints,
+        color_weight,
+        avoid_colors,
+        audience=audience,
     )
 
 
@@ -290,6 +390,7 @@ def recommend_from_text(
     color_hints: Optional[Sequence[str]] = None,
     color_weight: float = 0.25,
     avoid_colors: Optional[Sequence[str]] = None,
+    audience: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """Rank catalog items from a natural-language style request."""
     df, emb = load_catalog(csv_path, emb_path)
@@ -299,7 +400,16 @@ def recommend_from_text(
         q = q / (np.linalg.norm(q) + 1e-8)
         sims = emb @ q
         return _rank_catalog(
-            sims, df, k, 0.0, exclude_ids, 0, color_hints, color_weight, avoid_colors
+            sims,
+            df,
+            k,
+            0.0,
+            exclude_ids,
+            0,
+            color_hints,
+            color_weight,
+            avoid_colors,
+            audience=audience,
         )
 
     skip = {str(x) for x in (exclude_ids or [])}
@@ -308,6 +418,8 @@ def recommend_from_text(
     for i, row in df.iterrows():
         item_id = str(row.get("id", i))
         if item_id in skip:
+            continue
+        if not _audience_ok(str(row.get("title", "")), str(row.get("category", "")), audience):
             continue
         blob = f"{row.get('title', '')} {row.get('color', '')} {row.get('category', '')}".lower()
         hits = sum(1 for t in tokens if t in blob)

@@ -8,7 +8,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 from .llm_advisor import analyze_avatar_llm, has_gemini, stylist_chat
-from .recommend import recommend_from_text, recommend_top_k
+from .recommend import infer_clothing_audience, recommend_from_text, recommend_top_k
 from .segmentation import load_segformer, segment_clothing
 
 SWATCH_HEX = {
@@ -289,6 +289,7 @@ def fallback_analysis(image: Image.Image, label_map: Optional[np.ndarray] = None
             hair_rgb=hair,
         )
         body_type, body_notes = _body_from_labels(label_map)
+        presentation = _presentation_from_photo(image, label_map)
     except Exception:
         season, undertone, palette, avoid, color_notes = _season_from_rgb(
             np.array([168.0, 132.0, 118.0])
@@ -297,6 +298,7 @@ def fallback_analysis(image: Image.Image, label_map: Optional[np.ndarray] = None
             "unspecified",
             "Could not read silhouette from this photo. Try a brighter, full-body shot.",
         )
+        presentation = "unisex"
     return {
         "color_season": season,
         "undertone": undertone,
@@ -305,6 +307,7 @@ def fallback_analysis(image: Image.Image, label_map: Optional[np.ndarray] = None
         "color_notes": color_notes,
         "body_type": body_type,
         "body_notes": body_notes,
+        "presentation": presentation,
         "style_direction": f"{season} colors, {body_type} line — one tailored layer, one easy piece.",
         "silhouette_tips": "",
         "occasions": ["weekday", "smart casual"],
@@ -374,6 +377,14 @@ def _normalize_analysis(data: dict, local: Optional[dict] = None) -> dict:
     notes = compact_body_copy({"body_notes": data.get("color_notes") or ""}, max_sentences=2)
     if notes:
         data["color_notes"] = notes
+    local_pres = _normalize_presentation(str(local.get("presentation") or ""))
+    gem_pres = _normalize_presentation(str(data.get("presentation") or ""))
+    if gem_pres in {"man", "woman"}:
+        data["presentation"] = gem_pres
+    elif local_pres in {"man", "woman"}:
+        data["presentation"] = local_pres
+    else:
+        data["presentation"] = gem_pres if gem_pres != "neutral" else "unisex"
     return data
 
 
@@ -417,6 +428,17 @@ def _avoid_hints(analysis: Optional[dict]) -> list[str]:
     return [str(c) for c in (analysis.get("avoid_colors") or []) if str(c).strip()]
 
 
+def _audience_from(analysis: Optional[dict], image: Optional[Image.Image] = None) -> str:
+    pres = resolve_presentation("", analysis)
+    if pres in {"man", "woman"}:
+        return pres
+    if image is not None:
+        guessed = infer_clothing_audience(image)
+        if guessed in {"man", "woman"}:
+            return guessed
+    return ""
+
+
 def catalog_for_avatar(
     image: Image.Image,
     analysis: Optional[dict] = None,
@@ -432,6 +454,7 @@ def catalog_for_avatar(
         color_hints=palette_hints(analysis),
         color_weight=0.22,
         avoid_colors=_avoid_hints(analysis),
+        audience=_audience_from(analysis, image),
     )
 
 
@@ -440,12 +463,21 @@ def catalog_for_query(
     analysis: Optional[dict] = None,
     k: int = 5,
     exclude_ids: Optional[Sequence] = None,
+    image: Optional[Image.Image] = None,
 ) -> list[dict]:
     analysis = analysis or {}
     palette = ", ".join(str(c) for c in (analysis.get("palette") or [])[:5])
     season = str(analysis.get("color_season") or "")
     body = str(analysis.get("body_type") or "")
-    enriched = " ".join(p for p in (query, season, body, palette) if p).strip()
+    audience = _audience_from(analysis, image)
+    dept = (
+        "menswear men's clothing shirt trousers"
+        if audience == "man"
+        else "womenswear women's clothing"
+        if audience == "woman"
+        else ""
+    )
+    enriched = " ".join(p for p in (query, dept, season, body, palette) if p).strip()
     return recommend_from_text(
         enriched,
         k=k,
@@ -453,6 +485,7 @@ def catalog_for_query(
         color_hints=palette_hints(analysis),
         color_weight=0.35,
         avoid_colors=_avoid_hints(analysis),
+        audience=audience,
     )
 
 
@@ -594,12 +627,35 @@ def _fit_thumb(avatar: Image.Image, max_size: tuple[int, int] = (420, 560)) -> I
 
 
 def _normalize_presentation(presentation: str) -> str:
-    key = str(presentation or "neutral").strip().lower()
-    if key in {"woman", "women", "female"}:
+    key = str(presentation or "neutral").strip().lower().replace("_", " ")
+    if key in {"woman", "women", "female", "womenswear", "women's"}:
         return "woman"
-    if key in {"man", "men", "male"}:
+    if key in {"man", "men", "male", "menswear", "men's"}:
         return "man"
+    if key in {"unisex"}:
+        return "unisex"
     return "neutral"
+
+
+def resolve_presentation(choice: str = "", analysis: Optional[dict] = None) -> str:
+    """User override wins; otherwise use the photo read."""
+    chosen = _normalize_presentation(choice)
+    if chosen in {"man", "woman"}:
+        return chosen
+    detected = _normalize_presentation(str((analysis or {}).get("presentation") or ""))
+    if detected in {"man", "woman"}:
+        return detected
+    return "neutral"
+
+
+def _presentation_from_photo(image: Image.Image, label_map: Optional[np.ndarray] = None) -> str:
+    guessed = infer_clothing_audience(image)
+    if label_map is not None and guessed != "man":
+        dress = float(np.isin(label_map, [5, 7]).mean())
+        pants = float((label_map == 6).mean())
+        if dress > 0.06 and dress > pants * 2:
+            return "woman"
+    return guessed if guessed in {"man", "woman"} else "unisex"
 
 
 def _normalize_body_type(body_type: str) -> str:
@@ -737,6 +793,8 @@ def build_body_board(
         label_map = align_label_map(label_map, avatar)
     body = _normalize_body_type(str(analysis.get("body_type") or "unspecified"))
     style = _normalize_presentation(presentation)
+    if style not in _SILHOUETTES:
+        style = "neutral"
 
     W, H = BOARD_SIZE
     board = Image.new("RGB", (W, H), BOARD_BG)

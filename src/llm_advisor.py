@@ -40,17 +40,19 @@ SYSTEM_CHAT = (
     "is too harsh (for example stark black on a Soft Summer). "
     "When the shopper shares a photo, read the garment, color, and fit before advising. "
     "When they send a voice note, treat the transcript as their brief. "
-    "If a client profile exists, stay inside that palette and body type. "
+    "If a client profile exists, stay inside that palette, body type, and clothing department. "
+    "If presentation is man or menswear, recommend only men's or unisex pieces — never a women's dress, kurta, skirt, blouse, or girls' top. "
+    "If presentation is woman or womenswear, skip men's-only pieces. "
+    "Name the department in the first sentence when it is man or woman. "
     "Never tell them to upload an avatar or tap Analyze if a color season or body type is already in the profile. "
     "If nothing has been analyzed yet, still give precise general advice. "
     "Reply in 2–6 short sentences. Do not invent brand names. No hashtags. No emoji.\n"
     "Example — shopper: What colors suit me? Profile: Soft Summer, dusty rose, sage, taupe, navy.\n"
     "You: Your Soft Summer set is dusty rose, sage, taupe, soft navy, and mauve. "
     "Those muted cool-neutrals sit quietly on your skin; ease off hot pink, orange, and stark white.\n"
-    "Example — shopper: I want to wear for a fashion show. Profile: inverted triangle, Soft Summer.\n"
-    "You: Keep the shoulder line soft — a fluid dusty-rose or taupe blouse, not a boxy black blazer. "
-    "Give the lower half a clean navy or mauve column so the walk reads editorial. "
-    "One metallic or leather accessory is enough; skip a tracksuit."
+    "Example — shopper: I want to wear for a fashion show. Profile: inverted triangle, Soft Summer, presentation=man.\n"
+    "You: Menswear, Soft Summer: keep the shoulder easy with an open shirt, not a boxy black blazer. "
+    "A navy or taupe column of trousers reads clean on the walk. One leather or metal accent is enough; skip a tracksuit and skip any women's dress."
 )
 
 FEW_SHOT_CAPTION = (
@@ -331,8 +333,22 @@ def _avoid_line(analysis: dict) -> str:
     return ", ".join(colors[:4])
 
 
-def _body_line(body_type: str) -> str:
+def _body_line(body_type: str, presentation: str = "") -> str:
     key = str(body_type or "").strip().lower()
+    menswear = str(presentation or "").strip().lower() in {"man", "male", "men", "menswear"}
+    if menswear:
+        tips = {
+            "inverted triangle": (
+                "Ease the shoulder with an open shirt or unconstructed jacket, "
+                "and keep trousers a clean column."
+            ),
+            "pear": "Give the top some structure — a collared shirt or light layer — and keep the lower half simple.",
+            "apple": "A longer shirt or light overshirt through the middle keeps proportion calm.",
+            "hourglass": "A jacket that nips in or a tucked shirt will follow the frame.",
+            "rectangle": "A break at the waist — tuck, knit, or cropped layer — adds shape.",
+            "athletic": "Tailored layers and a clear trouser hem add interest to a straight frame.",
+        }
+        return tips.get(key, "Keep proportion clean: one tailored piece, one easy piece.")
     tips = {
         "inverted triangle": (
             "Ease the shoulder — a fluid blouse or open jacket, not a boxy blazer — "
@@ -358,6 +374,14 @@ def local_stylist_reply(
     season = str(analysis.get("color_season") or "").strip()
     undertone = str(analysis.get("undertone") or "").strip()
     body = str(analysis.get("body_type") or "").strip()
+    presentation = str(analysis.get("presentation") or "").strip().lower()
+    dept = (
+        "menswear"
+        if presentation in {"man", "male", "men", "menswear"}
+        else "womenswear"
+        if presentation in {"woman", "female", "women", "womenswear"}
+        else ""
+    )
     palette = _palette_line(analysis)
     avoid = _avoid_line(analysis)
     rec_line = _top5_line(recs)
@@ -391,7 +415,7 @@ def local_stylist_reply(
         if avoid:
             bits.append(f"Ease off {avoid}.")
         if body:
-            bits.append(_body_line(body))
+            bits.append(_body_line(body, presentation))
         return " ".join(bits)
 
     occasion = "a fashion-show walk" if show_q else (
@@ -400,33 +424,46 @@ def local_stylist_reply(
         )
     )
     if show_q:
-        look = (
-            f"For {occasion}, stay inside {season or 'your'} colors"
-            + (f" ({palette})" if palette else "")
-            + ". "
-            + _body_line(body)
-            + " One editorial idea: a fluid dusty-rose or taupe top with a navy or mauve column, "
-            "clean shoes, one metal or leather accent. Skip a tracksuit and skip a heavy black blazer "
-            "if it fights a soft palette."
-        )
+        if dept == "menswear":
+            look = (
+                f"For {occasion} in menswear, stay inside {season or 'your'} colors"
+                + (f" ({palette})" if palette else "")
+                + ". "
+                + _body_line(body, presentation)
+                + " One editorial idea: a fluid shirt in your palette with a navy or taupe trouser column, "
+                "clean shoes, one metal or leather accent. Skip a tracksuit, a heavy black blazer if it "
+                "fights a soft palette, and skip women's dresses."
+            )
+        else:
+            look = (
+                f"For {occasion}, stay inside {season or 'your'} colors"
+                + (f" ({palette})" if palette else "")
+                + ". "
+                + _body_line(body, presentation)
+                + " One editorial idea: a fluid dusty-rose or taupe top with a navy or mauve column, "
+                "clean shoes, one metal or leather accent. Skip a tracksuit and skip a heavy black blazer "
+                "if it fights a soft palette."
+            )
     elif weekend_q:
         look = (
             f"For {occasion}, keep {season or 'your palette'} easy: "
             f"{palette or 'muted neutrals'} in a simple top and a continuous lower half. "
-            + _body_line(body)
+            + _body_line(body, presentation)
         )
     elif formal_q:
         look = (
             f"For {occasion}, hold the {season or 'personal'} palette and a calm silhouette. "
-            + _body_line(body)
+            + _body_line(body, presentation)
             + (f" Lean on {palette}." if palette else "")
         )
     else:
         look = (
             f"{season or 'Your palette'}"
             + (f" ({palette})" if palette else "")
-            + f" with a {body or 'balanced'} frame. "
-            + _body_line(body)
+            + f" with a {body or 'balanced'} frame"
+            + (f" in {dept}" if dept else "")
+            + ". "
+            + _body_line(body, presentation)
         )
 
     if has_recs:
@@ -504,7 +541,8 @@ SYSTEM_AVATAR = (
     "You are VESTURE, a world-class personal stylist with exceptional high-fashion sense "
     "and the best recommendation judgment in luxury retail. Analyze the person in the photo. "
     "Be specific and kind. Do not invent brand names. Never comment on attractiveness. "
-    "Do not assign gender. Silhouette labels are geometric and apply to everyone. "
+    "Set presentation to man or woman from the person in the photo so the catalog can shop "
+    "menswear vs womenswear. Silhouette labels stay geometric. "
     "Do not default to Light Spring — that season is overused. "
     "Return JSON only."
 )
@@ -523,10 +561,11 @@ def analyze_avatar_llm(image: Image.Image) -> tuple[dict, bool]:
         "avoid_colors (array of 3 color names that clash with this body tone),\n"
         "color_notes (ONE short sentence on undertone and value),\n"
         "body_type (hourglass|pear|apple|inverted triangle|rectangle|athletic|unspecified; "
-        "geometric silhouette for any gender),\n"
-        "body_notes (ONE short sentence on shoulder / waist / hip only; unspecified if not full body; "
-        "never assign gender),\n"
-        "style_direction (ONE short sentence of what to wear; do not repeat body_notes),\n"
+        "geometric silhouette),\n"
+        "presentation (man|woman|unisex; clothing department from the person in the photo — "
+        "man = menswear, woman = womenswear; unisex only if truly unclear),\n"
+        "body_notes (ONE short sentence on shoulder / waist / hip only; unspecified if not full body),\n"
+        "style_direction (ONE short sentence of what to wear in that department; do not repeat body_notes),\n"
         "silhouette_tips (empty string, or one different short tip — never copy body_notes),\n"
         "occasions (array of 2 occasions).\n"
         "Do not default to Light Spring. Olive, golden-medium, or muted warm skin is usually "
@@ -604,7 +643,8 @@ def stylist_chat(
             f"color season={analysis.get('color_season') or 'n/a'}, "
             f"undertone={analysis.get('undertone') or 'n/a'}, "
             f"palette={palette or 'n/a'}, "
-            f"body type={analysis.get('body_type') or 'n/a'}."
+            f"body type={analysis.get('body_type') or 'n/a'}, "
+            f"presentation={analysis.get('presentation') or 'n/a'}."
         )
         if analysis.get("body_notes"):
             context_bits.append(str(analysis["body_notes"]))
@@ -622,7 +662,8 @@ def stylist_chat(
     if images:
         context_bits.append(
             f"The shopper attached {len(list(images))} look/garment photo(s). "
-            "Read the clothing, color, and silhouette before recommending."
+            "Read clothing, color, silhouette, and whether this is a man or woman "
+            "before recommending. Stay in the matching department."
         )
     if audio_bytes:
         context_bits.append("The shopper also sent a voice note; honor that brief.")
