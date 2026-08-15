@@ -158,6 +158,11 @@ def _cloth_type(category: str) -> str:
     return "upper"
 
 
+def _idm_supports(category: str) -> bool:
+    """Public IDM-VTON Space is VITON-HD upper-body only — pants become tops there."""
+    return _cloth_type(category) == "upper"
+
+
 def _gradio_file(path: str):
     try:
         from gradio_client import handle_file
@@ -384,20 +389,26 @@ def try_on_vton(
     prompt = extra_prompt or build_garment_prompt(
         category, color=color, style=style, extra=extra_prompt
     )
+    cloth_type = _cloth_type(category)
     errors: list[str] = []
 
     if garment is not None:
-        try:
-            result = run_idm_vton(person, garment, prompt)
-            return result, None, prompt, "IDM-VTON"
-        except Exception as exc:
-            errors.append(f"IDM-VTON: {exc}")
+        # IDM-VTON's public Space has no cloth-type control and always paints
+        # onto the torso. Skip it for pants/skirts/dresses so they stay lower-body.
+        if _idm_supports(category):
+            try:
+                result = run_idm_vton(person, garment, prompt)
+                return result, None, prompt, "IDM-VTON"
+            except Exception as exc:
+                errors.append(f"IDM-VTON: {exc}")
 
         try:
             result = run_catvton(person, garment, category=category)
-            warn = "IDM-VTON Space unavailable; used CatVTON."
-            if errors:
-                warn = f"{warn} ({errors[-1]})"
+            warn = None
+            if cloth_type != "upper":
+                warn = f"Used CatVTON with cloth type “{cloth_type}” (IDM-VTON is tops-only)."
+            elif errors:
+                warn = f"IDM-VTON Space unavailable; used CatVTON. ({errors[-1]})"
             return result, warn, prompt, "CatVTON"
         except Exception as exc:
             errors.append(f"CatVTON: {exc}")

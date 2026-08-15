@@ -51,7 +51,9 @@ SYSTEM_CHAT = (
 
 FEW_SHOT_CAPTION = (
     "Example: a navy cotton crew-neck t-shirt with a relaxed fit and matte finish.\n"
-    "Example: a black tailored blazer in structured wool with notch lapels."
+    "Example: a black tailored blazer in structured wool with notch lapels.\n"
+    "Example: dark-wash slim jeans with a mid rise and visible stitching.\n"
+    "Example: a camel midi skirt in smooth wool with a clean A-line."
 )
 
 
@@ -246,8 +248,15 @@ def _template_caption(
     color: Optional[str] = None,
     style: Optional[str] = None,
 ) -> str:
-    bits = [p for p in (color, style, category) if p]
-    look = " ".join(bits) if bits else "fashion garment"
+    kind = {
+        "upper": "top or shirt",
+        "upper body": "top or shirt",
+        "lower": "pair of pants or a skirt",
+        "lower body": "pair of pants or a skirt",
+        "dress": "dress",
+    }.get((category or "upper").strip().lower(), "fashion garment")
+    bits = [p for p in (color, style) if p]
+    look = " ".join(bits + [kind]) if bits else kind
     return f"a {look} with clean lines and wearable everyday styling"
 
 
@@ -265,11 +274,23 @@ def caption_garment(
     fallback = _template_caption(category, color, style)
     if image is None or not has_gemini():
         return fallback, False
+    region_lock = {
+        "lower": (
+            "This is a LOWER-BODY garment (pants, jeans, shorts, or skirt). "
+            "Never describe it as a shirt, top, blouse, or jacket."
+        ),
+        "lower body": (
+            "This is a LOWER-BODY garment (pants, jeans, shorts, or skirt). "
+            "Never describe it as a shirt, top, blouse, or jacket."
+        ),
+        "dress": "This is a DRESS. Do not describe it as a separate top.",
+        "upper": "This is an UPPER-BODY garment (shirt, blouse, jacket, or knit).",
+    }.get((category or "upper").strip().lower(), "")
     prompt = (
         f"{FEW_SHOT_CAPTION}\n"
         "Describe this garment in one sentence for a virtual try-on model. "
         "Include color, fabric, silhouette, and garment type. "
-        f"Category hint: {category}."
+        f"Category hint: {category}. {region_lock}"
     )
     try:
         text = _generate_text(prompt, image=image)
@@ -362,6 +383,7 @@ SYSTEM_AVATAR = (
     "You are VESTURE, a world-class personal stylist with exceptional high-fashion sense "
     "and the best recommendation judgment in luxury retail. Analyze the person in the photo. "
     "Be specific and kind. Do not invent brand names. Never comment on attractiveness. "
+    "Do not assign gender. Silhouette labels are geometric and apply to everyone. "
     "Return JSON only."
 )
 
@@ -369,14 +391,17 @@ SYSTEM_AVATAR = (
 def analyze_avatar_llm(image: Image.Image) -> tuple[dict, bool]:
     """Gemini color + body + style JSON. Returns (payload, used_gemini)."""
     prompt = (
-        "Analyze this person for personal styling. Return JSON with keys:\n"
+        "Analyze this person for personal styling. First read body tone from visible skin. "
+        "Return JSON with keys:\n"
         "color_season (string, e.g. Soft Autumn),\n"
         "undertone (warm|cool|neutral),\n"
-        "palette (array of 5 wearable color names),\n"
-        "avoid_colors (array of 3 color names),\n"
-        "color_notes (2 sentences on skin/hair/eye contrast),\n"
-        "body_type (hourglass|pear|apple|inverted triangle|rectangle|athletic|unspecified),\n"
-        "body_notes (2 sentences on silhouette; say unspecified if the crop is not full body),\n"
+        "palette (array of 5 wearable color names that suit this body tone),\n"
+        "avoid_colors (array of 3 color names that clash with this body tone),\n"
+        "color_notes (2 sentences on body tone: skin undertone, value, and hair/eye contrast),\n"
+        "body_type (hourglass|pear|apple|inverted triangle|rectangle|athletic|unspecified; "
+        "geometric silhouette for any gender),\n"
+        "body_notes (2 sentences on shoulder / waist / hip line only; say unspecified if the crop "
+        "is not full body; do not mention dresses unless the photo is a dress; never assign gender),\n"
         "style_direction (2 sentences of style recommendation),\n"
         "silhouette_tips (1–2 sentences),\n"
         "occasions (array of 2–3 occasions).\n"

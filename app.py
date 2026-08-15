@@ -20,16 +20,19 @@ from PIL import Image
 
 from src.confidence import DEFAULT_GATE, evaluate_segmentation_gate, summarize_scores
 from src.hf_auth import ensure_hf_login
-from src.llm_advisor import caption_garment, explain_result, has_gemini, style_advice
+from src.llm_advisor import caption_garment, explain_result, style_advice
 from src.preprocess import load_rgb, preprocess_garment, preprocess_person, quality_check
 from src.recommend import clip_similarity, crop_by_mask, recommend_top_k
 from src.segmentation import colorize_labels, segment_clothing
 from src.stylist import (
     analyze_avatar,
+    avatar_label_map,
+    build_analysis_boards,
     catalog_for_avatar,
     catalog_for_query,
     interpret_chat,
     reply_to_shopper,
+    swatch_hex,
 )
 from src.tryon import list_demo_pairs, try_on_vton
 
@@ -556,6 +559,26 @@ def _inject_css():
             width:12px; height:12px; border-radius:50%; display:inline-block;
             border:1px solid rgba(255,255,255,.28);
         }
+        .color-set{ display:flex; flex-wrap:wrap; gap:.85rem; margin:.35rem 0 .4rem; }
+        .color-chip{ display:flex; flex-direction:column; align-items:center; gap:.45rem; min-width:88px; }
+        .color-chip-swatch{
+            width:76px; height:76px; border-radius:8px;
+            border:1px solid rgba(255,255,255,.18);
+            box-shadow:var(--shadow-sm);
+        }
+        .color-chip-label{
+            font-family:'JetBrains Mono', monospace; font-size:.68rem;
+            letter-spacing:.06em; text-transform:uppercase; color:var(--ink-soft);
+            text-align:center; max-width:96px;
+        }
+        .analysis-kicker{
+            font-family:'JetBrains Mono', monospace; font-size:.62rem; letter-spacing:.08em;
+            text-transform:uppercase; color:var(--violet); margin:0 0 .35rem 0;
+        }
+        .analysis-card div[data-testid="stImage"] img{
+            border-radius:6px;
+            border:1px solid var(--line);
+        }
 
         /* ---------- Product cards ---------- */
         .product-card{
@@ -693,10 +716,9 @@ def _warm_segformer():
     return load_segformer()
 
 
-def _render_llm_panels(caption: str, advice: str, explanation: str, *, used_gemini: bool) -> None:
-    source = "Gemini" if used_gemini else "Template fallback"
+def _render_llm_panels(caption: str, advice: str, explanation: str, *, used_gemini: bool = False) -> None:
     st.markdown('<hr class="hr-rule" />', unsafe_allow_html=True)
-    _section_head("Stylist layer", "AI description &amp; advice", f"Powered by {source}.")
+    _section_head("Stylist layer", "AI description &amp; advice")
     c1, c2 = st.columns(2, gap="large")
     with c1:
         with st.container(border=True):
@@ -709,8 +731,6 @@ def _render_llm_panels(caption: str, advice: str, explanation: str, *, used_gemi
     with st.container(border=True):
         st.markdown("**Why this result**")
         st.write(explanation or "—")
-    if not used_gemini:
-        st.caption("Set GOOGLE_API_KEY in .env for live Gemini captions and advice.")
 
 
 def _render_reco_cards(results: list) -> None:
@@ -818,7 +838,7 @@ def _show_look(
         key=f"{key_prefix}_{look['id']}",
         width="stretch",
         on_click=_go_studio_with_garment,
-        args=(str(original), look["title"]),
+        args=(str(original), look["title"], look.get("category")),
     )
 
 
@@ -969,14 +989,25 @@ def tryon_tab():
             _show_photo(studio_ref, max_width=720)
 
     regions = ["upper", "lower", "dress"]
-    pref = st.session_state.get("pref_region", "upper")
-    pref_idx = regions.index(pref) if pref in regions else 0
+    if "studio_region" not in st.session_state:
+        catalog_cat = str(st.session_state.get("catalog_garment_category") or "").strip().lower()
+        if catalog_cat in regions:
+            st.session_state["studio_region"] = catalog_cat
+        else:
+            pref = st.session_state.get("pref_region", "upper")
+            st.session_state["studio_region"] = pref if pref in regions else "upper"
 
     with st.container(border=True):
         st.markdown("**Styling options**")
         o1, o2, o3 = st.columns(3)
         with o1:
-            category = st.selectbox("Garment region", regions, index=pref_idx)
+            category = st.selectbox(
+                "Garment region",
+                regions,
+                key="studio_region",
+                help="Upper = tops. Lower = pants, jeans, shorts, skirts. Dress = full garment.",
+            )
+            st.caption("Lower keeps pants on the legs — not as a top.")
         with o2:
             color = st.text_input("Color (optional)", placeholder="e.g. navy blue")
         with o3:
@@ -1064,16 +1095,18 @@ def tryon_tab():
             st.session_state.pop("query_for_reco", None)
             return
 
-        with st.spinner("Captioning garment (Gemini when available)…"):
+        with st.spinner("Preparing garment description…"):
             caption, cap_gemini = caption_garment(
                 garment, category=category, color=color or None, style=style or None
             )
-        if cap_gemini:
-            st.caption("Gemini garment description ready.")
-        else:
-            st.caption("Using template garment description (set GOOGLE_API_KEY for Gemini).")
 
-        with st.spinner("Running IDM-VTON (CatVTON / SD2 fallback if the Space is busy)…"):
+        with st.spinner(
+            "Running CatVTON lower-body try-on…"
+            if category == "lower"
+            else "Running CatVTON dress try-on…"
+            if category == "dress"
+            else "Running IDM-VTON (CatVTON / SD2 fallback if the Space is busy)…"
+        ):
             result, warn, prompt, engine = try_on_vton(
                 person,
                 mask,
@@ -1322,33 +1355,22 @@ def _render_saved_pieces(*, key_prefix: str, compact: bool = False) -> None:
                 st.markdown("</div>", unsafe_allow_html=True)
 
 
-def _go_studio_with_garment(img_path: Path | str, title: str) -> None:
+def _go_studio_with_garment(
+    img_path: Path | str, title: str, category: str | None = None
+) -> None:
     st.session_state["catalog_garment_path"] = str(img_path)
     st.session_state["catalog_garment_title"] = title
+    cat = str(category or "").strip().lower()
+    if cat in {"upper", "lower", "dress"}:
+        st.session_state["catalog_garment_category"] = cat
+        st.session_state["studio_region"] = cat
     studio = st.session_state.get("page_studio")
     if studio is not None:
         st.switch_page(studio)
 
 
 def _swatch_hex(name: str) -> str:
-    key = str(name or "").lower()
-    table = {
-        "black": "#111111", "white": "#F4F1EC", "ivory": "#F3E6D0", "cream": "#E8D5B5",
-        "navy": "#1B2A4A", "navy blue": "#1B2A4A", "charcoal": "#3A3A3A", "grey": "#8A8580",
-        "gray": "#8A8580", "olive": "#5C5A32", "camel": "#C4A574", "rust": "#B85C38",
-        "peach": "#E8B4A0", "coral": "#D9786A", "rose": "#C9899B", "lavender": "#A89BB8",
-        "powder blue": "#9BB5C8", "emerald": "#1F6B4A", "true red": "#B42318",
-        "chocolate brown": "#5A3825", "brown": "#6B4423", "green": "#3D6B4F",
-        "violet": "#8B5CF6", "purple": "#6D3BD7", "pink": "#D4A0B0", "leaf green": "#5B7F3A",
-        "warm camel": "#C4A574", "soft grey": "#A39E99", "stark black": "#0A0A0A",
-        "icy grey": "#C9CDD1", "icy blue": "#C5D4E0", "hot pink": "#D63B7A",
-        "orange": "#D9762C", "mustard": "#C4A035", "muted olive": "#6B6A3D",
-        "pure white": "#FFFFFF", "cool fuchsia": "#C23B86",
-    }
-    for name_key, hex_v in table.items():
-        if name_key in key:
-            return hex_v
-    return "#8B5CF6"
+    return swatch_hex(name)
 
 
 def _palette_html(colors: list) -> str:
@@ -1361,12 +1383,42 @@ def _palette_html(colors: list) -> str:
     return f'<div class="palette-row">{"".join(chips)}</div>'
 
 
+def _color_set_html(colors: list) -> str:
+    chips = []
+    for color in colors:
+        label = html.escape(str(color))
+        chips.append(
+            '<div class="color-chip">'
+            f'<span class="color-chip-swatch" style="background:{_swatch_hex(str(color))}"></span>'
+            f'<span class="color-chip-label">{label}</span>'
+            "</div>"
+        )
+    return f'<div class="color-set">{"".join(chips)}</div>'
+
+
 def _init_stylist_state() -> None:
     st.session_state.setdefault("stylist_messages", [])
     st.session_state.setdefault("stylist_recs", [])
     st.session_state.setdefault("stylist_all_recs", [])
     st.session_state.setdefault("stylist_shown_ids", [])
     st.session_state.setdefault("stylist_analysis", None)
+    st.session_state.setdefault("stylist_label_map", None)
+    st.session_state.setdefault("stylist_color_board", None)
+    st.session_state.setdefault("stylist_body_board", None)
+    st.session_state.setdefault("stylist_board_presentation", None)
+
+
+def _refresh_stylist_boards(avatar: Image.Image, analysis: dict, presentation: str) -> None:
+    label_map = st.session_state.get("stylist_label_map")
+    color_board, body_board = build_analysis_boards(
+        avatar,
+        analysis,
+        label_map=label_map,
+        presentation=presentation,
+    )
+    st.session_state["stylist_color_board"] = color_board
+    st.session_state["stylist_body_board"] = body_board
+    st.session_state["stylist_board_presentation"] = presentation
 
 
 def _remember_recs(items: list) -> None:
@@ -1404,7 +1456,7 @@ def _render_stylist_looks(results: list, *, key_prefix: str) -> None:
                 unsafe_allow_html=True,
             )
             if st.button("Try in Studio", key=f"{key_prefix}_{item['id']}", width="stretch"):
-                _go_studio_with_garment(img_path, str(item["title"]))
+                _go_studio_with_garment(img_path, str(item["title"]), str(item.get("category") or ""))
             st.link_button("Buy / Find online", item["shop_url"], width="stretch")
             st.markdown("</div>", unsafe_allow_html=True)
 
@@ -1498,7 +1550,7 @@ def _catalog_grid() -> None:
                 saved = item_id in wish
                 with st.container(horizontal=True, gap="small"):
                     if st.button("Try in Studio", key=f"cat_try_{item_id}", width="stretch"):
-                        _go_studio_with_garment(img_path, str(row.title))
+                        _go_studio_with_garment(img_path, str(row.title), str(row.category))
                     label = "Saved" if saved else "Save"
                     st.button(
                         label,
@@ -1659,7 +1711,11 @@ def _handle_stylist_prompt(
         reply = f"{reply}\n\nOpening Studio with {studio_item['title']}."
     messages.append({"role": "assistant", "content": reply, "recs": new_recs, "used_gemini": used})
     if studio_item is not None:
-        _go_studio_with_garment(ROOT / studio_item["image_path"], str(studio_item["title"]))
+        _go_studio_with_garment(
+            ROOT / studio_item["image_path"],
+            str(studio_item["title"]),
+            str(studio_item.get("category") or ""),
+        )
 
 
 def stylist_tab():
@@ -1667,7 +1723,7 @@ def stylist_tab():
     _section_head(
         "Personal atelier",
         "Stylist AI",
-        "Upload an avatar, then chat — type, speak, or attach a look for recommendations.",
+        "Upload an avatar for a body-tone reading, then get a color set and catalog looks.",
     )
 
     vis, form = st.columns([1.05, 1], gap="large")
@@ -1696,61 +1752,94 @@ def stylist_tab():
                 st.session_state["stylist_avatar"] = st.session_state["tryon_person"]
                 st.rerun()
 
+        presentation = st.selectbox(
+            "Silhouette style",
+            ["Neutral", "Woman", "Man"],
+            index=0,
+            key="stylist_presentation",
+            help="Changes the icon drawing only. The app never infers gender from the photo.",
+        )
         analyze = st.button("Analyze", type="primary", width="stretch")
         if avatar is None:
-            st.caption("Upload an avatar to unlock color analysis, body type, and recommendations.")
+            st.caption("Upload an avatar to unlock body-tone analysis, a color set, and recommendations.")
 
     avatar = st.session_state.get("stylist_avatar")
     if analyze:
         if avatar is None:
             _avatar_needed_dialog()
             return
-        with st.spinner("Reading color season, silhouette, and catalog matches…"):
+        with st.spinner("Reading body tone and recommending a color set…"):
             try:
-                analysis = analyze_avatar(avatar)
+                try:
+                    label_map = avatar_label_map(avatar)
+                except Exception:
+                    label_map = None
+                analysis = analyze_avatar(avatar, label_map=label_map)
                 recs = catalog_for_avatar(avatar, analysis, k=5)
             except Exception as exc:
                 st.error(f"Stylist failed: {exc}")
                 return
         st.session_state["stylist_analysis"] = analysis
+        st.session_state["stylist_label_map"] = label_map
+        _refresh_stylist_boards(avatar, analysis, presentation)
         st.session_state["stylist_shown_ids"] = []
         st.session_state["stylist_all_recs"] = []
         _remember_recs(recs)
         season = analysis.get("color_season") or "your palette"
+        undertone = analysis.get("undertone") or "neutral"
         body = analysis.get("body_type") or "silhouette"
+        palette = [str(c) for c in (analysis.get("palette") or []) if str(c).strip()]
+        palette_line = ", ".join(palette[:5]) if palette else "your recommended set"
         st.session_state["stylist_messages"] = [
             {
                 "role": "assistant",
                 "content": (
-                    f"Color season reads as {season} with a {body} frame. "
+                    f"Body tone reads {undertone} ({season}) with a {body} frame. "
+                    f"A suitable color set is {palette_line}. "
                     "Ask for more recommendations, a weekend outfit, or say “try the top match in Studio.”"
                 ),
             }
         ]
 
     analysis = st.session_state.get("stylist_analysis")
+    if (
+        analysis
+        and avatar is not None
+        and st.session_state.get("stylist_board_presentation") != presentation
+    ):
+        _refresh_stylist_boards(avatar, analysis, presentation)
+
     if analysis:
-        source = "Gemini" if analysis.get("used_gemini") else "SegFormer fallback"
+        season = str(analysis.get("color_season") or "Unspecified")
+        undertone = str(analysis.get("undertone") or "neutral")
+        palette = list(analysis.get("palette") or [])
+        avoid = list(analysis.get("avoid_colors") or [])
         st.markdown('<hr class="hr-rule" />', unsafe_allow_html=True)
         a1, a2 = st.columns(2, gap="large")
         with a1:
             with st.container(border=True):
+                st.markdown('<div class="analysis-card">', unsafe_allow_html=True)
+                st.markdown('<p class="analysis-kicker">01 // Body tone</p>', unsafe_allow_html=True)
                 st.markdown("**Color analysis**")
-                season_pill = _pill(str(analysis.get("color_season") or "Unspecified"), "ok")
-                undertone = str(analysis.get("undertone") or "neutral")
+                season_pill = _pill(season, "ok")
                 undertone_pill = _pill(f"{undertone} undertone", "neutral")
                 st.markdown(
                     f"{season_pill} {undertone_pill}",
                     unsafe_allow_html=True,
                 )
                 st.write(analysis.get("color_notes") or "")
-                st.caption("Wear")
-                st.markdown(_palette_html(list(analysis.get("palette") or [])), unsafe_allow_html=True)
-                st.caption("Ease off")
-                st.markdown(_palette_html(list(analysis.get("avoid_colors") or [])), unsafe_allow_html=True)
-                st.caption(f"Source · {source}")
+                color_board = st.session_state.get("stylist_color_board")
+                if color_board is not None:
+                    st.image(
+                        color_board,
+                        caption="Skin, hair, and cloth sampled from this photo",
+                        width="stretch",
+                    )
+                st.markdown("</div>", unsafe_allow_html=True)
         with a2:
             with st.container(border=True):
+                st.markdown('<div class="analysis-card">', unsafe_allow_html=True)
+                st.markdown('<p class="analysis-kicker">02 // Silhouette</p>', unsafe_allow_html=True)
                 st.markdown("**Body type & style**")
                 st.markdown(
                     _pill(str(analysis.get("body_type") or "unspecified"), "ok"),
@@ -1763,14 +1852,34 @@ def stylist_tab():
                 occasions = analysis.get("occasions") or []
                 if occasions:
                     st.caption("Occasions · " + ", ".join(str(o) for o in occasions))
-        if not analysis.get("used_gemini"):
-            st.caption("Set GOOGLE_API_KEY in .env for a live Gemini color and body reading.")
+                body_board = st.session_state.get("stylist_body_board")
+                if body_board is not None:
+                    st.image(
+                        body_board,
+                        caption="Estimated from a single photo and clothing mask. Not a body scan.",
+                        width="stretch",
+                    )
+                st.markdown("</div>", unsafe_allow_html=True)
+
+        st.markdown('<hr class="hr-rule" />', unsafe_allow_html=True)
+        _section_head(
+            "Palette",
+            "Recommended color set",
+            f"Wearable colors for a {html.escape(undertone)} undertone in the {html.escape(season)} family.",
+        )
+        if palette:
+            st.markdown(_color_set_html(palette), unsafe_allow_html=True)
+        else:
+            st.caption("No color set yet — try Analyze again with a clearer, well-lit photo.")
+        if avoid:
+            st.caption("Ease off")
+            st.markdown(_palette_html(avoid), unsafe_allow_html=True)
 
         st.markdown('<hr class="hr-rule" />', unsafe_allow_html=True)
         _section_head(
             "Styled for you",
             "Try these looks",
-            "FashionCLIP ranked the catalog to your avatar. Send any piece to Studio.",
+            "Catalog pieces ranked to your avatar and recommended color set. Send any piece to Studio.",
         )
         _render_stylist_looks(st.session_state.get("stylist_recs") or [], key_prefix="sty_try")
         more_col, studio_col = st.columns(2)
@@ -1794,7 +1903,11 @@ def stylist_tab():
             if st.button("Open AI Studio", type="primary", width="stretch"):
                 recs = st.session_state.get("stylist_recs") or []
                 if recs:
-                    _go_studio_with_garment(ROOT / recs[0]["image_path"], str(recs[0]["title"]))
+                    _go_studio_with_garment(
+                        ROOT / recs[0]["image_path"],
+                        str(recs[0]["title"]),
+                        str(recs[0].get("category") or ""),
+                    )
                 else:
                     studio = st.session_state.get("page_studio")
                     if studio is not None:
@@ -1809,8 +1922,6 @@ def stylist_tab():
     # Nested so the input stays in the page column (same width as the sections above)
     # instead of a full-bleed bar at the bottom of the browser.
     with st.container(border=True):
-        if not has_gemini():
-            st.caption("Set GOOGLE_API_KEY in .env so the chatbot can answer with Gemini.")
         messages = st.session_state.get("stylist_messages") or []
         if not messages:
             st.caption("Chat anytime — attach a photo, record a voice note, or tap Analyze first for a personal reading.")

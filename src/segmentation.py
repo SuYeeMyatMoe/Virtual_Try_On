@@ -108,8 +108,15 @@ def segment_clothing(
 
     selected = np.isin(pred, labels)
     if not selected.any():
-        # Fallback: try upper-clothes only, then any clothing-ish labels
-        for fallback in ([4], [4, 5, 6, 7]):
+        cat = category.lower().strip()
+        if cat in {"lower", "lower body"}:
+            # Never fall back to a shirt mask — that turns pants into a top.
+            fallbacks = ([5, 6], [12, 13], [5, 6, 12, 13])
+        elif cat in {"dress"}:
+            fallbacks = ([7], [4, 5, 6, 7])
+        else:
+            fallbacks = ([4], [4, 7], [4, 5, 6, 7])
+        for fallback in fallbacks:
             selected = np.isin(pred, fallback)
             if selected.any():
                 labels = fallback
