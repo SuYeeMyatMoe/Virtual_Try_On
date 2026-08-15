@@ -1619,19 +1619,64 @@ def _images_from_chat_files(files) -> list[Image.Image]:
     return images
 
 
+def _clear_stylist_draft() -> None:
+    for key in (
+        "stylist_draft_text",
+        "stylist_draft_editor",
+        "stylist_draft_files",
+        "stylist_draft_audio",
+        "stylist_draft_audio_mime",
+        "stylist_voice_error",
+    ):
+        st.session_state.pop(key, None)
+
+
+def _stage_voice_draft(chat, *, files) -> bool:
+    """Turn a voice note into editable chat text. Returns True if a draft was staged."""
+    audio = getattr(chat, "audio", None)
+    typed = (getattr(chat, "text", None) or "").strip()
+    if audio is None:
+        return False
+    audio_bytes = audio.getvalue() if hasattr(audio, "getvalue") else bytes(audio)
+    mime = str(getattr(audio, "type", None) or "audio/wav")
+    transcript, err = _transcribe_audio(audio, mime_type=mime)
+    draft = (transcript or "").strip()
+    if typed and draft and typed.lower() not in draft.lower():
+        draft = f"{typed}\n{draft}"
+    elif typed and not draft:
+        draft = typed
+    if not draft:
+        st.session_state["stylist_voice_error"] = err or (
+            "Could not turn that voice note into text. Type your question, or try the mic again."
+        )
+        return True
+    st.session_state["stylist_draft_text"] = draft
+    st.session_state["stylist_draft_editor"] = draft
+    st.session_state["stylist_draft_files"] = list(files or [])
+    st.session_state["stylist_draft_audio"] = audio_bytes
+    st.session_state["stylist_draft_audio_mime"] = mime
+    st.session_state.pop("stylist_voice_error", None)
+    return True
+
+
 def _transcribe_audio(audio, mime_type: str = "audio/wav"):
     """Load voice transcription from llm_advisor, reloading if Streamlit cached an older module."""
     import importlib
 
     import src.llm_advisor as advisor
 
+    advisor = importlib.reload(advisor)
     fn = getattr(advisor, "transcribe_audio", None)
     if fn is None:
-        advisor = importlib.reload(advisor)
-        fn = getattr(advisor, "transcribe_audio", None)
-    if fn is None:
-        return "", False
-    return fn(audio, mime_type)
+        return "", "Voice transcription is not available in this build."
+    result = fn(audio, mime_type)
+    if not isinstance(result, tuple) or not result:
+        return "", "Transcription failed."
+    text = str(result[0] or "").strip()
+    second = result[1] if len(result) > 1 else ""
+    if isinstance(second, str):
+        return text, second
+    return text, ("" if second else "Could not transcribe that clip.")
 
 
 def _handle_stylist_prompt(
@@ -1649,7 +1694,7 @@ def _handle_stylist_prompt(
     if audio is not None:
         audio_bytes = audio.getvalue() if hasattr(audio, "getvalue") else bytes(audio)
         audio_mime = str(getattr(audio, "type", None) or "audio/wav")
-        transcript, _ = _transcribe_audio(audio_bytes, mime_type=audio_mime)
+        transcript, _err = _transcribe_audio(audio_bytes, mime_type=audio_mime)
         if transcript and not prompt:
             prompt = transcript
         elif transcript:
@@ -1835,20 +1880,22 @@ def stylist_tab():
         palette = [str(c) for c in (analysis.get("palette") or []) if str(c).strip()]
         palette_line = ", ".join(palette[:5]) if palette else "your recommended set"
         dept = analysis.get("presentation")
-        dept_line = (
-            "Shopping menswear. "
+        shop_line = (
+            "I'll shop **menswear** for you."
             if dept == "man"
-            else "Shopping womenswear. "
+            else "I'll shop **womenswear** for you."
             if dept == "woman"
-            else ""
+            else "Here's a simple read from your photo."
         )
         st.session_state["stylist_messages"] = [
             {
                 "role": "assistant",
                 "content": (
-                    f"{dept_line}Body tone reads {undertone} ({season}) with a {body} frame. "
-                    f"A suitable color set is {palette_line}. "
-                    "Ask for more recommendations, a weekend outfit, or say “try the top match in Studio.”"
+                    f"{shop_line}\n\n"
+                    f"Your coloring is a **{undertone}** undertone in the **{season}** family, "
+                    f"with a **{body}** frame.\n\n"
+                    f"**Good on you:** {palette_line}.\n\n"
+                    "Ask what to wear, or tap a look below."
                 ),
             }
         ]
@@ -1949,7 +1996,7 @@ def stylist_tab():
                         st.session_state["stylist_messages"].append(
                             {
                                 "role": "assistant",
-                                "content": "Another five pieces from the catalog — try one in Studio or keep chatting.",
+                                "content": "Here are five more pieces. Tap **Try in Studio** on any one, or keep chatting.",
                                 "recs": extra,
                             }
                         )
@@ -1974,11 +2021,22 @@ def stylist_tab():
     _section_head(
         "Ask the atelier",
         "Stylist chat",
-        "Gemini stylist with high-fashion sense. Type, speak, or attach a look for recommendations.",
+        "Type a question, or record a voice note — we'll turn it into text you can edit before sending.",
     )
     # Nested so the input stays in the page column (same width as the sections above)
     # instead of a full-bleed bar at the bottom of the browser.
     with st.container(border=True):
+        if st.session_state.pop("stylist_flush_draft", False):
+            pending_text = str(st.session_state.pop("stylist_pending_text", "") or "").strip()
+            pending_files = list(st.session_state.pop("stylist_pending_files", []) or [])
+            _clear_stylist_draft()
+            if pending_text or pending_files:
+                with st.spinner("Stylist is thinking…"):
+                    _handle_stylist_prompt(
+                        pending_text, avatar, analysis, files=pending_files, audio=None
+                    )
+                st.rerun()
+
         messages = st.session_state.get("stylist_messages") or []
         if not messages:
             st.caption("Chat anytime — attach a photo, record a voice note, or tap Analyze first for a personal reading.")
@@ -1994,12 +2052,54 @@ def stylist_tab():
                             st.image(_array_jpeg(look, max_width=420), width="stretch")
                 if msg.get("audio"):
                     st.audio(msg["audio"], format=str(msg.get("audio_mime") or "audio/wav"))
-                st.write(msg.get("content", ""))
+                body = str(msg.get("content") or "")
+                if role == "assistant":
+                    st.markdown(body)
+                else:
+                    st.write(body)
                 extra = msg.get("recs") or []
                 if extra:
                     _render_stylist_looks(extra, key_prefix=f"chat_{i}")
 
-        if not any(m.get("role") == "user" for m in messages):
+        if st.session_state.get("stylist_voice_error"):
+            st.warning(st.session_state["stylist_voice_error"])
+
+        if st.session_state.get("stylist_draft_text") is not None:
+            st.caption("Voice converted to text. Edit anything, then send.")
+            if st.session_state.get("stylist_draft_audio"):
+                st.audio(
+                    st.session_state["stylist_draft_audio"],
+                    format=str(st.session_state.get("stylist_draft_audio_mime") or "audio/wav"),
+                )
+            if "stylist_draft_editor" not in st.session_state:
+                st.session_state["stylist_draft_editor"] = st.session_state.get("stylist_draft_text") or ""
+            st.text_area(
+                "Your message",
+                key="stylist_draft_editor",
+                height=100,
+                label_visibility="collapsed",
+            )
+            send_c, clear_c = st.columns(2)
+            with send_c:
+                send_draft = st.button("Send message", type="primary", width="stretch")
+            with clear_c:
+                clear_draft = st.button("Discard", width="stretch")
+            if send_draft:
+                st.session_state["stylist_pending_text"] = str(
+                    st.session_state.get("stylist_draft_editor") or ""
+                ).strip()
+                st.session_state["stylist_pending_files"] = list(
+                    st.session_state.get("stylist_draft_files") or []
+                )
+                st.session_state["stylist_flush_draft"] = True
+                st.rerun()
+            if clear_draft:
+                st.session_state["stylist_flush_draft"] = True
+                st.rerun()
+
+        if not any(m.get("role") == "user" for m in messages) and st.session_state.get(
+            "stylist_draft_text"
+        ) is None:
             selected = st.pills(
                 "Try asking",
                 [
@@ -2026,9 +2126,14 @@ def stylist_tab():
             text = (chat.text or "").strip()
             files = list(chat.files or [])
             audio = chat.audio
-            if text or files or audio is not None:
+            if audio is not None:
+                with st.spinner("Turning your voice into text…"):
+                    _stage_voice_draft(chat, files=files)
+                st.rerun()
+            elif text or files:
+                _clear_stylist_draft()
                 with st.spinner("Stylist is thinking…"):
-                    _handle_stylist_prompt(text, avatar, analysis, files=files, audio=audio)
+                    _handle_stylist_prompt(text, avatar, analysis, files=files, audio=None)
                 st.rerun()
 
 

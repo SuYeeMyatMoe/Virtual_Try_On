@@ -31,28 +31,28 @@ SYSTEM_STYLIST = (
 )
 
 SYSTEM_CHAT = (
-    "You are VESTURE, a world-class personal stylist with exceptional high-fashion sense "
-    "and the sharpest outfit-recommendation judgment in luxury retail. "
-    "Think like a creative director: silhouette, color theory, fabric, proportion, occasion, "
-    "and what will actually flatter this client. Recommend with confidence — what to wear, "
-    "why it works, and what to pair. When catalog pieces are listed, rank them and say which "
-    "to try first. Prefer pieces that sit in the client's palette; say so if a listed piece "
-    "is too harsh (for example stark black on a Soft Summer). "
-    "When the shopper shares a photo, read the garment, color, and fit before advising. "
-    "When they send a voice note, treat the transcript as their brief. "
-    "If a client profile exists, stay inside that palette, body type, and clothing department. "
-    "If presentation is man or menswear, recommend only men's or unisex pieces — never a women's dress, kurta, skirt, blouse, or girls' top. "
-    "If presentation is woman or womenswear, skip men's-only pieces. "
-    "Name the department in the first sentence when it is man or woman. "
-    "Never tell them to upload an avatar or tap Analyze if a color season or body type is already in the profile. "
-    "If nothing has been analyzed yet, still give precise general advice. "
-    "Reply in 2–6 short sentences. Do not invent brand names. No hashtags. No emoji.\n"
+    "You are VESTURE, a friendly personal shopper. Talk like a helpful person, not a runway critic. "
+    "Use everyday words: shirt, trousers, jacket, dress — not 'column', 'editorial', 'atelier', or 'silhouette' unless needed. "
+    "Reply in markdown with short lines:\n"
+    "1) One sentence: what to wear, in plain language.\n"
+    "2) One sentence: why it suits their colors or body.\n"
+    "3) If catalog pieces are listed, a numbered list of up to 3, each on its own line: "
+    "'1. **Title** — short reason'. Do not dump every title into one sentence.\n"
+    "Keep the whole reply under 90 words. Blank line between the plan and the list. "
+    "If presentation is man/menswear, only men's or unisex pieces — never a women's dress, kurta, skirt, or blouse. "
+    "If presentation is woman/womenswear, skip men's-only pieces. "
+    "Do not open with 'Menswear,' or the season name alone. "
+    "Never tell them to upload an avatar or tap Analyze if a profile is already present. "
+    "No hashtags. No emoji.\n"
     "Example — shopper: What colors suit me? Profile: Soft Summer, dusty rose, sage, taupe, navy.\n"
-    "You: Your Soft Summer set is dusty rose, sage, taupe, soft navy, and mauve. "
-    "Those muted cool-neutrals sit quietly on your skin; ease off hot pink, orange, and stark white.\n"
-    "Example — shopper: I want to wear for a fashion show. Profile: inverted triangle, Soft Summer, presentation=man.\n"
-    "You: Menswear, Soft Summer: keep the shoulder easy with an open shirt, not a boxy black blazer. "
-    "A navy or taupe column of trousers reads clean on the walk. One leather or metal accent is enough; skip a tracksuit and skip any women's dress."
+    "You: Your coloring is a cool Soft Summer.\n\n"
+    "**Good on you:** dusty rose, sage, taupe, and soft navy.\n\n"
+    "**Skip:** hot pink, orange, and stark white.\n"
+    "Example — shopper: I want to wear for a fashion show. Profile: inverted triangle, Soft Summer, man.\n"
+    "You: For a show, wear an easy open shirt with straight navy trousers — nothing boxy on the shoulders.\n\n"
+    "Those Soft Summer colors stay quiet on your skin.\n\n"
+    "1. **John Players Men Navy Blue Shirt** — open neck, easy shoulder\n"
+    "2. **Peter England Men Party Blue Jeans** — clean straight line"
 )
 
 FEW_SHOT_CAPTION = (
@@ -318,6 +318,42 @@ def _top5_line(top5: Optional[Sequence[dict]]) -> str:
     return "; ".join(parts)
 
 
+def _top5_chat_list(top5: Optional[Sequence[dict]], limit: int = 3) -> str:
+    if not top5:
+        return ""
+    lines = []
+    for i, item in enumerate(list(top5)[:limit], 1):
+        title = str(item.get("title") or "item")
+        color = str(item.get("color") or "").strip()
+        extra = f" — {color}" if color else ""
+        lines.append(f"{i}. **{title}**{extra}")
+    return "\n".join(lines)
+
+
+def _soften_chat_text(text: str) -> str:
+    """Turn a one-block reply into short paragraphs the shopper can scan."""
+    import re
+
+    t = " ".join(str(text or "").split())
+    if not t:
+        return t
+    if "\n" in str(text or "") and len(str(text).strip().splitlines()) >= 2:
+        return str(text).strip()
+    sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", t) if s.strip()]
+    if len(sentences) <= 2:
+        return t
+    chunks: list[str] = []
+    buf: list[str] = []
+    for sent in sentences:
+        buf.append(sent)
+        if len(buf) >= 2:
+            chunks.append(" ".join(buf))
+            buf = []
+    if buf:
+        chunks.append(" ".join(buf))
+    return "\n\n".join(chunks)
+
+
 def _has_profile(analysis: Optional[dict]) -> bool:
     analysis = analysis or {}
     return bool(analysis.get("color_season") or analysis.get("body_type") or analysis.get("palette"))
@@ -384,14 +420,12 @@ def local_stylist_reply(
     )
     palette = _palette_line(analysis)
     avoid = _avoid_line(analysis)
-    rec_line = _top5_line(recs)
-    has_recs = rec_line != "No catalog matches yet."
 
     if not _has_profile(analysis):
         return (
-            "I can still style you in general terms. For a fashion show, pick one clear silhouette "
-            "and a tight palette — navy, taupe, or ivory — and keep the walk uncluttered. "
-            "Upload an avatar and tap Analyze if you want colors locked to your skin."
+            "I can still help in simple terms.\n\n"
+            "**Wear:** one clear shape and a small palette — navy, taupe, or ivory.\n\n"
+            "Add a photo and tap Analyze when you want colors matched to your skin."
         )
 
     color_q = any(
@@ -403,71 +437,61 @@ def local_stylist_reply(
     )
     weekend_q = any(p in text for p in ("weekend", "casual", "everyday"))
     formal_q = any(p in text for p in ("wedding", "gala", "interview", "office", "party", "date"))
+    rec_list = _top5_chat_list(recs)
 
     if color_q and not show_q:
         bits = [
-            f"Your reading is {undertone or 'balanced'} undertone"
-            + (f" in the {season} family" if season else "")
+            f"Your coloring reads **{undertone or 'balanced'}**"
+            + (f" in the **{season}** family" if season else "")
             + "."
         ]
         if palette:
-            bits.append(f"Wear {palette} — those sit quietly on your skin.")
+            bits.append(f"**Good on you:** {palette}.")
         if avoid:
-            bits.append(f"Ease off {avoid}.")
+            bits.append(f"**Skip:** {avoid}.")
         if body:
             bits.append(_body_line(body, presentation))
-        return " ".join(bits)
+        return "\n\n".join(bits)
 
-    occasion = "a fashion-show walk" if show_q else (
-        "a casual weekend" if weekend_q else (
-            "a more formal moment" if formal_q else "this occasion"
-        )
-    )
     if show_q:
         if dept == "menswear":
             look = (
-                f"For {occasion} in menswear, stay inside {season or 'your'} colors"
+                "For a show, wear an easy open shirt with straight trousers — nothing boxy on the shoulders.\n\n"
+                f"Stay in {season or 'your'} colors"
                 + (f" ({palette})" if palette else "")
-                + ". "
+                + ".\n\n"
                 + _body_line(body, presentation)
-                + " One editorial idea: a fluid shirt in your palette with a navy or taupe trouser column, "
-                "clean shoes, one metal or leather accent. Skip a tracksuit, a heavy black blazer if it "
-                "fights a soft palette, and skip women's dresses."
             )
         else:
             look = (
-                f"For {occasion}, stay inside {season or 'your'} colors"
+                "For a show, keep the top easy and the lower half a simple matching line.\n\n"
+                f"Stay in {season or 'your'} colors"
                 + (f" ({palette})" if palette else "")
-                + ". "
+                + ".\n\n"
                 + _body_line(body, presentation)
-                + " One editorial idea: a fluid dusty-rose or taupe top with a navy or mauve column, "
-                "clean shoes, one metal or leather accent. Skip a tracksuit and skip a heavy black blazer "
-                "if it fights a soft palette."
             )
     elif weekend_q:
         look = (
-            f"For {occasion}, keep {season or 'your palette'} easy: "
-            f"{palette or 'muted neutrals'} in a simple top and a continuous lower half. "
+            f"**Weekend:** keep it easy in {palette or 'muted neutrals'} — "
+            "a simple top and a matching lower half.\n\n"
             + _body_line(body, presentation)
         )
     elif formal_q:
         look = (
-            f"For {occasion}, hold the {season or 'personal'} palette and a calm silhouette. "
+            f"**For this occasion:** hold {season or 'your'} colors and a calm shape.\n\n"
             + _body_line(body, presentation)
-            + (f" Lean on {palette}." if palette else "")
+            + (f"\n\nLean on {palette}." if palette else "")
         )
     else:
         look = (
-            f"{season or 'Your palette'}"
-            + (f" ({palette})" if palette else "")
-            + f" with a {body or 'balanced'} frame"
-            + (f" in {dept}" if dept else "")
-            + ". "
+            f"Try {palette or season or 'your colors'} on a {body or 'balanced'} frame"
+            + (f" ({dept})" if dept else "")
+            + ".\n\n"
             + _body_line(body, presentation)
         )
 
-    if has_recs:
-        look += f" Closest catalog pieces in this edit: {rec_line}."
+    if rec_list:
+        look += "\n\n**From the catalog:**\n" + rec_list
     return look
 
 
@@ -599,28 +623,131 @@ def analyze_avatar_llm(image: Image.Image) -> tuple[dict, bool]:
             return {}, False
 
 
-def transcribe_audio(audio: Any, mime_type: str = "audio/wav") -> tuple[str, bool]:
-    """Transcribe a recorded voice note. Returns (transcript, used_gemini)."""
-    if audio is None or not has_gemini():
-        return "", False
-    data = audio.getvalue() if hasattr(audio, "getvalue") else bytes(audio)
-    if not data:
-        return "", False
-    mime = getattr(audio, "type", None) or mime_type or "audio/wav"
-    prompt = "Transcribe this spoken fashion request exactly. Return only the transcript, no quotes."
+def _audio_bytes(audio: Any) -> bytes:
+    if audio is None:
+        return b""
+    if isinstance(audio, (bytes, bytearray, memoryview)):
+        return bytes(audio)
+    if hasattr(audio, "getvalue"):
+        data = audio.getvalue()
+        if data:
+            return bytes(data)
+    if hasattr(audio, "read"):
+        try:
+            audio.seek(0)
+        except Exception:
+            pass
+        data = audio.read()
+        if data:
+            return bytes(data)
+    return b""
+
+
+def _sniff_audio_mime(data: bytes, claimed: str = "") -> str:
+    claimed = str(claimed or "").split(";")[0].strip().lower()
+    if data.startswith(b"RIFF") and b"WAVE" in data[:16]:
+        return "audio/wav"
+    if data.startswith(b"OggS"):
+        return "audio/ogg"
+    if data.startswith(b"ID3") or data[:2] in (b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"):
+        return "audio/mpeg"
+    if data[:4] == b"\x1aE\xdf\xa3":
+        return "audio/webm"
+    if len(data) >= 12 and data[4:8] == b"ftyp":
+        return "audio/mp4"
+    if claimed.startswith("audio/"):
+        return claimed
+    return "audio/wav"
+
+
+def _gemini_response_text(response: Any) -> str:
+    text = (getattr(response, "text", None) or "").strip().strip('"').strip()
+    if text:
+        return text
+    for cand in getattr(response, "candidates", None) or []:
+        content = getattr(cand, "content", None)
+        for part in getattr(content, "parts", None) or []:
+            piece = (getattr(part, "text", None) or "").strip().strip('"').strip()
+            if piece:
+                return piece
+    return ""
+
+
+def transcribe_audio(audio: Any, mime_type: str = "audio/wav") -> tuple[str, str]:
+    """Transcribe a recorded voice note. Returns (transcript, error)."""
+    load_dotenv(_ENV, override=True)
+    key = _api_key()
+    if not key:
+        return "", "Voice needs a Gemini key. Add GOOGLE_API_KEY to .env, then restart Streamlit."
+    data = _audio_bytes(audio)
+    if len(data) < 2500:
+        return "", "That recording was too short. Hold the mic, speak a full sentence, then send."
+    claimed = getattr(audio, "type", None) or mime_type or "audio/wav"
+    mime = _sniff_audio_mime(data, str(claimed))
+    prompt = (
+        "Transcribe the spoken words in this audio exactly. "
+        "Return only the transcript, no quotes, no extra commentary."
+    )
+    mimes = []
+    for candidate in (mime, "audio/wav", "audio/webm", "audio/ogg", "audio/mp4", "audio/mpeg"):
+        if candidate not in mimes:
+            mimes.append(candidate)
+    models = []
+    for name in (DEFAULT_MODEL, "gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash"):
+        if name and name not in models:
+            models.append(name)
+
+    last_err = "Gemini returned no transcript."
     try:
         from google import genai
         from google.genai import types
 
-        client = genai.Client(api_key=_api_key())
-        response = client.models.generate_content(
-            model=DEFAULT_MODEL,
-            contents=[types.Part.from_bytes(data=data, mime_type=mime), prompt],
+        client = genai.Client(api_key=key)
+        for model_name in models[:2]:
+            for try_mime in mimes[:3]:
+                try:
+                    response = client.models.generate_content(
+                        model=model_name,
+                        contents=[
+                            types.Part.from_bytes(data=data, mime_type=try_mime),
+                            prompt,
+                        ],
+                        config=types.GenerateContentConfig(
+                            temperature=0.0,
+                            max_output_tokens=400,
+                        ),
+                    )
+                    text = _gemini_response_text(response)
+                    if text and len(text) > 1:
+                        return text, ""
+                    finish = ""
+                    cands = getattr(response, "candidates", None) or []
+                    if cands:
+                        finish = str(getattr(cands[0], "finish_reason", "") or "")
+                    if finish:
+                        last_err = f"Gemini did not return words ({finish})."
+                except Exception as exc:
+                    last_err = str(exc)
+                    continue
+    except Exception as exc:
+        last_err = str(exc)
+
+    try:
+        import google.generativeai as genai_old
+
+        genai_old.configure(api_key=key)
+        model = genai_old.GenerativeModel(models[0])
+        response = model.generate_content(
+            [{"mime_type": mime, "data": data}, prompt]
         )
-        text = (getattr(response, "text", None) or "").strip().strip('"')
-        return text, bool(text)
-    except Exception:
-        return "", False
+        text = _gemini_response_text(response)
+        if text and len(text) > 1:
+            return text, ""
+    except Exception as exc:
+        last_err = str(exc)
+
+    short = (last_err or "Could not transcribe that clip.").replace("\n", " ").strip()
+    return "", short[:280]
 
 
 def stylist_chat(
@@ -635,6 +762,7 @@ def stylist_chat(
     """Conversational styling reply via Gemini. Returns (text, used_gemini)."""
     analysis = analysis or {}
     rec_line = _top5_line(recs)
+    rec_list = _top5_chat_list(recs)
     palette = ", ".join(str(c) for c in (analysis.get("palette") or [])[:6])
     context_bits = []
     if analysis.get("color_season") or analysis.get("body_type"):
@@ -654,7 +782,12 @@ def stylist_chat(
         p in (user_message or "").lower()
         for p in ("what color", "which color", "suit me", "my palette", "undertone")
     )
-    if rec_line and rec_line != "No catalog matches yet." and not color_q:
+    if rec_list and not color_q:
+        context_bits.append(
+            "Catalog pieces on the table (pick up to 3; skip any that clash with the palette):\n"
+            f"{rec_list}"
+        )
+    elif rec_line and rec_line != "No catalog matches yet." and not color_q:
         context_bits.append(
             "Catalog pieces on the table (prefer palette matches; reject pieces that clash): "
             f"{rec_line}."
@@ -690,7 +823,7 @@ def stylist_chat(
             system_instruction=SYSTEM_CHAT,
         )
         if text and "tap Analyze" not in text and "Upload an avatar" not in text:
-            return text, True
+            return _soften_chat_text(text), True
     except Exception:
         pass
     try:
@@ -701,7 +834,7 @@ def stylist_chat(
             system_instruction=SYSTEM_CHAT,
         )
         if text and "tap Analyze" not in text and "Upload an avatar" not in text:
-            return text, True
+            return _soften_chat_text(text), True
     except Exception:
         pass
     return fallback, False
