@@ -43,7 +43,7 @@ LOGO_PATH = ROOT / "assets" / "logo.png"
 # Stitch-style editorial stills (user lookbook references)
 EDITORIAL_LOOKS = [
     {
-        "file": "screen3.png",
+        "file": "screen1 - Copy.png",
         "id": "VE003",
         "eyebrow": "Digital exclusive",
         "title": "Neon couture drape",
