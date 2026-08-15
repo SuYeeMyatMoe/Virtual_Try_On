@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>VESTURE - Virtual Try-On Studio</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..900;1,6..96,400..900&amp;family=Hanken+Grotesk:ital,wght@0,100..900;1,100..900&amp;family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "inverse-on-surface": "#313030",
+                        "surface-tint": "#d0bcff",
+                        "primary-container": "#a078ff",
+                        "background": "#131313",
+                        "primary-fixed": "#e9ddff",
+                        "ink-black": "#0A0A0A",
+                        "on-primary": "#3c0091",
+                        "surface-variant": "#353535",
+                        "on-secondary-container": "#bab8b7",
+                        "surface-container": "#20201f",
+                        "error-container": "#93000a",
+                        "on-primary-fixed": "#23005c",
+                        "error": "#ffb4ab",
+                        "on-surface": "#e5e2e1",
+                        "tertiary": "#c6c6c7",
+                        "success-green": "#10B981",
+                        "electric-violet": "#8B5CF6",
+                        "tertiary-fixed-dim": "#c6c6c7",
+                        "on-surface-variant": "#cbc3d7",
+                        "tertiary-fixed": "#e2e2e2",
+                        "surface-container-high": "#2a2a2a",
+                        "secondary-fixed-dim": "#c9c6c5",
+                        "on-tertiary": "#2f3131",
+                        "secondary": "#c9c6c5",
+                        "on-error-container": "#ffdad6",
+                        "on-tertiary-fixed-variant": "#454747",
+                        "on-primary-fixed-variant": "#5516be",
+                        "inverse-primary": "#6d3bd7",
+                        "on-primary-container": "#340080",
+                        "primary-fixed-dim": "#d0bcff",
+                        "primary": "#d0bcff",
+                        "on-tertiary-container": "#282a2a",
+                        "surface-bright": "#393939",
+                        "inverse-surface": "#e5e2e1",
+                        "surface": "#131313",
+                        "tertiary-container": "#909191",
+                        "on-secondary-fixed": "#1c1b1b",
+                        "surface-container-highest": "#353535",
+                        "warning-amber": "#F59E0B",
+                        "on-background": "#e5e2e1",
+                        "surface-container-lowest": "#0e0e0e",
+                        "outline-variant": "#494454",
+                        "on-tertiary-fixed": "#1a1c1c",
+                        "glass-white": "rgba(255, 255, 255, 0.05)",
+                        "secondary-container": "#4a4949",
+                        "outline": "#958ea0",
+                        "on-secondary": "#313030",
+                        "on-secondary-fixed-variant": "#474646",
+                        "surface-dim": "#131313",
+                        "secondary-fixed": "#e5e2e1",
+                        "surface-container-low": "#1c1b1b",
+                        "on-error": "#690005"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "margin-desktop": "64px",
+                        "gutter": "24px",
+                        "unit": "4px",
+                        "margin-mobile": "16px",
+                        "section-gap": "80px"
+                    },
+                    "fontFamily": {
+                        "headline-lg-mobile": ["Bodoni Moda"],
+                        "headline-lg": ["Bodoni Moda"],
+                        "body-md": ["Hanken Grotesk"],
+                        "label-caps": ["Hanken Grotesk"],
+                        "headline-md": ["Bodoni Moda"],
+                        "label-tech": ["JetBrains Mono"],
+                        "display-lg": ["Bodoni Moda"],
+                        "body-lg": ["Hanken Grotesk"]
+                    },
+                    "fontSize": {
+                        "headline-lg-mobile": ["32px", { "lineHeight": "1.2", "fontWeight": "600" }],
+                        "headline-lg": ["48px", { "lineHeight": "1.2", "fontWeight": "600" }],
+                        "body-md": ["16px", { "lineHeight": "1.5", "fontWeight": "400" }],
+                        "label-caps": ["11px", { "lineHeight": "1.0", "letterSpacing": "0.1em", "fontWeight": "700" }],
+                        "headline-md": ["32px", { "lineHeight": "1.3", "fontWeight": "500" }],
+                        "label-tech": ["12px", { "lineHeight": "1.0", "letterSpacing": "0.05em", "fontWeight": "500" }],
+                        "display-lg": ["72px", { "lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "body-lg": ["18px", { "lineHeight": "1.6", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body {
+            background-color: #131313; /* background */
+            color: #e5e2e1; /* on-surface */
+        }
+        
+        .upload-zone {
+            border: 1px dashed #494454; /* outline-variant */
+            transition: all 0.3s ease;
+        }
+        
+        .upload-zone:hover {
+            border-color: #8B5CF6; /* electric-violet */
+            background-color: rgba(255, 255, 255, 0.02);
+        }
+        
+        .ai-pulse {
+            animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+        }
+        
+        @keyframes pulse-ring {
+            0% { transform: scale(0.8); opacity: 0.5; }
+            80%, 100% { transform: scale(2); opacity: 0; }
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col font-body-md text-body-md bg-background text-on-surface">
+<!-- TopAppBar -->
+<header class="bg-background dark:bg-ink-black text-primary dark:text-primary docked full-width top-0 border-b border-outline-variant/30 flat no shadows sticky z-50">
+<div class="flex justify-between items-center w-full px-margin-mobile md:px-margin-desktop py-4 max-w-full mx-auto">
+<div class="text-headline-md font-headline-md font-bold tracking-tighter text-on-surface dark:text-on-surface">
+                VESTURE
+            </div>
+<nav class="hidden md:flex items-center gap-8">
+<a class="text-electric-violet font-bold border-b-2 border-electric-violet pb-1 font-label-caps text-label-caps uppercase active:opacity-80 active:scale-95" href="#">Studio</a>
+<a class="text-on-surface-variant font-medium hover:text-on-surface transition-colors font-label-caps text-label-caps uppercase hover:bg-glass-white transition-all duration-300 px-2 py-1 active:opacity-80 active:scale-95" href="#">Catalog</a>
+<a class="text-on-surface-variant font-medium hover:text-on-surface transition-colors font-label-caps text-label-caps uppercase hover:bg-glass-white transition-all duration-300 px-2 py-1 active:opacity-80 active:scale-95" href="#">Stylist AI</a>
+<a class="text-on-surface-variant font-medium hover:text-on-surface transition-colors font-label-caps text-label-caps uppercase hover:bg-glass-white transition-all duration-300 px-2 py-1 active:opacity-80 active:scale-95" href="#">Profile</a>
+</nav>
+<div class="flex items-center gap-4">
+<button class="text-on-surface-variant hover:text-on-surface transition-colors hover:bg-glass-white p-2 rounded-DEFAULT active:opacity-80 active:scale-95">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">shopping_bag</span>
+</button>
+<button class="md:hidden text-on-surface-variant hover:text-on-surface transition-colors hover:bg-glass-white p-2 rounded-DEFAULT active:opacity-80 active:scale-95">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">menu</span>
+</button>
+</div>
+</div>
+</header>
+<!-- Main Content -->
+<main class="flex-grow w-full max-w-[1920px] mx-auto px-margin-mobile md:px-margin-desktop py-section-gap flex flex-col gap-12">
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-gutter items-start">
+<!-- Left Column: Upload Zones (4 cols on lg) -->
+<div class="lg:col-span-4 flex flex-col gap-8">
+<div class="flex items-center justify-between">
+<h1 class="font-headline-lg-mobile md:font-headline-lg text-headline-lg-mobile md:text-headline-lg text-on-surface">Studio</h1>
+<span class="font-label-tech text-label-tech text-electric-violet flex items-center gap-2">
+<span class="relative flex h-2 w-2">
+<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-electric-violet opacity-75"></span>
+<span class="relative inline-flex rounded-full h-2 w-2 bg-electric-violet"></span>
+</span>
+                        SYS_READY
+                    </span>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant">Upload a subject photo and a garment to begin the AI styling process.</p>
+<!-- Person Photo Upload -->
+<div class="flex flex-col gap-2"><div class="flex bg-surface-container-low rounded-DEFAULT p-1 mb-2 border border-outline-variant/20"><button class="flex-1 font-label-caps text-label-caps py-1.5 text-center text-on-surface bg-surface-variant rounded-sm">Upload</button><button class="flex-1 font-label-caps text-label-caps py-1.5 text-center text-on-surface-variant hover:text-on-surface transition-colors">My Avatars</button></div>
+<label class="font-label-caps text-label-caps text-on-surface-variant tracking-widest uppercase">Subject Data</label>
+<div class="upload-zone rounded-DEFAULT h-48 flex flex-col items-center justify-center cursor-pointer bg-surface-container relative overflow-hidden group">
+<div class="absolute inset-0 bg-glass-white backdrop-blur-[20px] opacity-0 group-hover:opacity-100 transition-opacity z-10 flex items-center justify-center">
+<span class="material-symbols-outlined text-electric-violet text-4xl">cloud_upload</span>
+</div>
+<div class="flex flex-col items-center gap-3 z-0 group-hover:opacity-0 transition-opacity">
+<span class="material-symbols-outlined text-on-surface-variant text-3xl">person</span>
+<span class="font-label-tech text-label-tech text-on-surface-variant">Person Photo</span>
+<span class="font-label-caps text-label-caps text-tertiary/50">PNG, JPG (MAX 10MB)</span>
+</div>
+</div>
+</div>
+<!-- Garment Upload -->
+<div class="flex flex-col gap-2">
+<label class="font-label-caps text-label-caps text-on-surface-variant tracking-widest uppercase">Target Garment</label>
+<div class="upload-zone rounded-DEFAULT h-48 flex flex-col items-center justify-center cursor-pointer bg-surface-container relative overflow-hidden group">
+<div class="absolute inset-0 bg-glass-white backdrop-blur-[20px] opacity-0 group-hover:opacity-100 transition-opacity z-10 flex items-center justify-center">
+<span class="material-symbols-outlined text-electric-violet text-4xl">cloud_upload</span>
+</div>
+<div class="flex flex-col items-center gap-3 z-0 group-hover:opacity-0 transition-opacity">
+<span class="material-symbols-outlined text-on-surface-variant text-3xl">checkroom</span>
+<span class="font-label-tech text-label-tech text-on-surface-variant">Garment Image</span>
+<span class="font-label-caps text-label-caps text-tertiary/50">FLAT LAY PREFERRED</span>
+</div>
+</div>
+</div>
+<button class="bg-glass-white text-electric-violet border border-electric-violet/30 rounded-DEFAULT py-3 px-6 font-label-caps text-label-caps uppercase tracking-widest hover:bg-electric-violet/10 transition-all duration-300 w-full flex items-center justify-center gap-3"><span class="material-symbols-outlined text-sm">sync</span> Sync with Style Profile</button><button class="bg-ink-black text-on-surface border border-on-surface rounded-DEFAULT py-4 px-6 font-label-caps text-label-caps uppercase tracking-widest hover:bg-electric-violet hover:border-electric-violet hover:text-white transition-all duration-300 w-full mt-4 flex items-center justify-center gap-3">
+<span class="material-symbols-outlined text-sm">magic_button</span>
+                    Generate Try-On
+                </button>
+</div>
+<!-- Right Column: Preview Area (8 cols on lg) -->
+<div class="lg:col-span-8 flex flex-col h-full min-h-[600px] bg-[#121212] border border-[#262626] rounded-DEFAULT p-4 relative overflow-hidden">
+<!-- AI Decorative elements -->
+<div class="absolute top-0 right-0 p-4 z-20 flex gap-2">
+<span class="font-label-tech text-label-tech text-on-surface-variant bg-ink-black/80 px-2 py-1 rounded backdrop-blur border border-outline-variant/30">VTO_ENGINE_V2</span>
+<span class="font-label-tech text-label-tech text-electric-violet bg-ink-black/80 px-2 py-1 rounded backdrop-blur border border-electric-violet/30 flex items-center gap-1">
+<span class="material-symbols-outlined text-[10px]">auto_awesome</span> LIVE
+                     </span>
+</div>
+<!-- Main Canvas -->
+<div class="flex-grow w-full h-full relative flex items-center justify-center border border-outline-variant/10 bg-surface-container-lowest overflow-hidden">
+<!-- Placeholder Image (representing generated output) -->
+<div class="absolute inset-0 bg-cover bg-center w-full h-full opacity-60 mix-blend-luminosity hover:mix-blend-normal hover:opacity-100 transition-all duration-700" data-alt="A highly detailed, professional fashion photography shot of a model wearing a futuristic yet minimalist digital garment. The lighting is high-key, stark white studio light creating crisp shadows and a modern, high-end editorial aesthetic. The backdrop is a seamless pure white sweep. The garment features subtle luminescent electric violet threading, emphasizing the cutting-edge digital atelier vibe of the brand." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuBKD9JYWAHaOdqRyWkdg_asOcUrLssnLkY4G6v_-c5Pdj07y2PMWZx-A7lnYeB6FeB26ZRLYjOp_huGDb7yKCUAhbg21oaDXlAhy1b42YNMsAGg_JS62z1swFOJUwEPkihUY9SdapLgsYZQDRxuB1BwY7AxMK5nQ97gUv4fURx6vk71IwWfL8SH9vnt6vUH-d4wGQC9oDNF40zJeNfrZnY8uKelaXjgb7L1soIjhiNw52SdqfEI8Tmt5Q'); opacity: 1; mix-blend-mode: normal;"></div>
+<!-- Scanning line effect (vanilla js will animate this slightly) -->
+<div class="absolute left-0 top-0 w-full h-[1px] bg-electric-violet/50 shadow-[0_0_10px_rgba(139,92,246,0.8)] z-10" id="scanline"></div>
+<!-- Initial State UI (before generation) -->
+<div class="absolute inset-0 flex flex-col items-center justify-center z-20 pointer-events-none opacity-0">
+<span class="material-symbols-outlined text-outline-variant text-6xl mb-4 font-extralight">wallpaper</span>
+<span class="font-label-tech text-label-tech text-outline-variant">AWAITING_DATA_INPUT</span>
+</div>
+</div>
+<!-- Bottom Panel: Metrics -->
+<div class="mt-4 pt-4 border-t border-outline-variant/20 grid grid-cols-2 md:grid-cols-4 gap-4 bg-ink-black/40 p-4">
+<div class="flex flex-col gap-1">
+<span class="font-label-caps text-label-caps text-on-surface-variant uppercase">Try-On Confidence</span>
+<div class="flex items-end gap-2">
+<span class="font-label-tech text-label-tech text-on-surface">COMPOSITE SCORE</span>
+<span class="font-label-tech text-label-tech text-electric-violet ml-auto">0.92</span>
+</div>
+<div class="w-full h-[1px] bg-surface-variant mt-1">
+<div class="h-full bg-electric-violet w-[92%]"></div>
+</div>
+</div>
+<div class="flex flex-col gap-1">
+<span class="font-label-caps text-label-caps text-on-surface-variant uppercase">SegFormer</span>
+<div class="flex items-end gap-2">
+<span class="font-label-tech text-label-tech text-success-green">MAPPED</span>
+<span class="font-label-tech text-label-tech text-on-surface-variant ml-auto">MASK_OK</span>
+</div>
+<div class="w-full h-[1px] bg-surface-variant mt-1">
+<div class="h-full bg-success-green w-[100%]"></div>
+</div>
+</div>
+<div class="flex flex-col gap-1 col-span-2 md:col-span-2 justify-end">
+<!-- View Toggle -->
+<div class="flex bg-surface-container rounded-DEFAULT p-1 w-full max-w-xs ml-auto border border-outline-variant/30">
+<button class="flex-1 font-label-caps text-label-caps py-2 text-center text-on-surface bg-ink-black shadow-sm rounded-sm transition-colors">AI RENDER</button>
+<button class="flex-1 font-label-caps text-label-caps py-2 text-center text-on-surface-variant hover:text-on-surface transition-colors">ORIGINAL</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Footer -->
+<footer class="bg-ink-black dark:bg-ink-black text-on-surface dark:text-on-surface full-width bottom border-t border-outline-variant/20 flat no shadows mt-auto">
+<div class="flex flex-col md:flex-row justify-between items-center w-full px-margin-mobile md:px-margin-desktop py-section-gap">
+<div class="font-headline-md text-headline-md font-bold text-on-surface mb-8 md:mb-0">
+                VESTURE
+            </div>
+<nav class="flex flex-wrap justify-center gap-6 mb-8 md:mb-0">
+<a class="font-label-caps text-label-caps uppercase text-on-secondary-container hover:text-electric-violet transition-colors default hover state with ease-in-out" href="#">Sustainability</a>
+<a class="font-label-caps text-label-caps uppercase text-on-secondary-container hover:text-electric-violet transition-colors default hover state with ease-in-out" href="#">Terms of Service</a>
+<a class="font-label-caps text-label-caps uppercase text-on-secondary-container hover:text-electric-violet transition-colors default hover state with ease-in-out" href="#">Privacy Policy</a>
+<a class="font-label-caps text-label-caps uppercase text-on-secondary-container hover:text-electric-violet transition-colors default hover state with ease-in-out" href="#">Contact</a>
+</nav>
+<div class="font-body-md text-body-md text-on-surface-variant text-sm">
+                © 2024 VESTURE DIGITAL ATELIER. ALL RIGHTS RESERVED.
+            </div>
+</div>
+</footer>
+<script>
+        // Simple scanline animation for the preview area
+        const scanline = document.getElementById('scanline');
+        if(scanline) {
+            let pos = 0;
+            let dir = 1;
+            function animateScanline() {
+                pos += dir * 0.5;
+                if(pos > 100 || pos < 0) dir *= -1;
+                scanline.style.top = `${pos}%`;
+                requestAnimationFrame(animateScanline);
+            }
+            animateScanline();
+        }
+    </script>
+</body></html>

@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>VESTURE | Your Digital Atelier</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..900;1,6..96,400..900&amp;family=Hanken+Grotesk:ital,wght@0,100..900;1,100..900&amp;family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "inverse-on-surface": "#313030",
+                        "surface-tint": "#d0bcff",
+                        "primary-container": "#a078ff",
+                        "background": "#131313",
+                        "primary-fixed": "#e9ddff",
+                        "ink-black": "#0A0A0A",
+                        "on-primary": "#3c0091",
+                        "surface-variant": "#353535",
+                        "on-secondary-container": "#bab8b7",
+                        "surface-container": "#20201f",
+                        "error-container": "#93000a",
+                        "on-primary-fixed": "#23005c",
+                        "error": "#ffb4ab",
+                        "on-surface": "#e5e2e1",
+                        "tertiary": "#c6c6c7",
+                        "success-green": "#10B981",
+                        "electric-violet": "#8B5CF6",
+                        "tertiary-fixed-dim": "#c6c6c7",
+                        "on-surface-variant": "#cbc3d7",
+                        "tertiary-fixed": "#e2e2e2",
+                        "surface-container-high": "#2a2a2a",
+                        "secondary-fixed-dim": "#c9c6c5",
+                        "on-tertiary": "#2f3131",
+                        "secondary": "#c9c6c5",
+                        "on-error-container": "#ffdad6",
+                        "on-tertiary-fixed-variant": "#454747",
+                        "on-primary-fixed-variant": "#5516be",
+                        "inverse-primary": "#6d3bd7",
+                        "on-primary-container": "#340080",
+                        "primary-fixed-dim": "#d0bcff",
+                        "primary": "#d0bcff",
+                        "on-tertiary-container": "#282a2a",
+                        "surface-bright": "#393939",
+                        "inverse-surface": "#e5e2e1",
+                        "surface": "#131313",
+                        "tertiary-container": "#909191",
+                        "on-secondary-fixed": "#1c1b1b",
+                        "surface-container-highest": "#353535",
+                        "warning-amber": "#F59E0B",
+                        "on-background": "#e5e2e1",
+                        "surface-container-lowest": "#0e0e0e",
+                        "outline-variant": "#494454",
+                        "on-tertiary-fixed": "#1a1c1c",
+                        "glass-white": "rgba(255, 255, 255, 0.05)",
+                        "secondary-container": "#4a4949",
+                        "outline": "#958ea0",
+                        "on-secondary": "#313030",
+                        "on-secondary-fixed-variant": "#474646",
+                        "surface-dim": "#131313",
+                        "secondary-fixed": "#e5e2e1",
+                        "surface-container-low": "#1c1b1b",
+                        "on-error": "#690005"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "margin-desktop": "64px",
+                        "gutter": "24px",
+                        "unit": "4px",
+                        "margin-mobile": "16px",
+                        "section-gap": "80px"
+                    },
+                    "fontFamily": {
+                        "headline-lg-mobile": ["Bodoni Moda"],
+                        "headline-lg": ["Bodoni Moda"],
+                        "body-md": ["Hanken Grotesk"],
+                        "label-caps": ["Hanken Grotesk"],
+                        "headline-md": ["Bodoni Moda"],
+                        "label-tech": ["JetBrains Mono"],
+                        "display-lg": ["Bodoni Moda"],
+                        "body-lg": ["Hanken Grotesk"]
+                    },
+                    "fontSize": {
+                        "headline-lg-mobile": ["32px", { "lineHeight": "1.2", "fontWeight": "600" }],
+                        "headline-lg": ["48px", { "lineHeight": "1.2", "fontWeight": "600" }],
+                        "body-md": ["16px", { "lineHeight": "1.5", "fontWeight": "400" }],
+                        "label-caps": ["11px", { "lineHeight": "1.0", "letterSpacing": "0.1em", "fontWeight": "700" }],
+                        "headline-md": ["32px", { "lineHeight": "1.3", "fontWeight": "500" }],
+                        "label-tech": ["12px", { "lineHeight": "1.0", "letterSpacing": "0.05em", "fontWeight": "500" }],
+                        "display-lg": ["72px", { "lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "body-lg": ["18px", { "lineHeight": "1.6", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .hero-overlay {
+            background: linear-gradient(180deg, rgba(10,10,10,0) 0%, rgba(10,10,10,0.8) 70%, rgba(10,10,10,1) 100%);
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface font-body-md min-h-screen selection:bg-electric-violet selection:text-white">
+<!-- TopAppBar -->
+<header class="bg-background dark:bg-ink-black docked full-width top-0 border-b border-outline-variant/30 sticky z-50">
+<div class="flex justify-between items-center w-full px-margin-desktop py-4 max-w-full mx-auto">
+<div class="flex items-center gap-4">
+<img alt="VESTURE Logo" class="h-8 w-auto" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBQqU7gTRabjt-MqoxOgC_lzgdGIzHjB-BKZKvxLZenZDPA8gbPTmcrUKkAcFj-EJMIM2mWqM7thB3C_ciaLTXA45eiGcTIwgN6SyvyMjz7SAtPhVZThPOsqmubB_1sgE-qNqK0tJU8jGAtpYTbDFxmfvFEGL9evEc9xnha692GqT_d7iSSrcsPsWoexOOgcDjjJUhZGuoJGzQRpmopG-qfzcvS_y4nWsYKlBAHEvCnCCCdOus3bhUMXg"/>
+<span class="text-headline-md font-headline-md font-bold tracking-tighter text-on-surface dark:text-on-surface">VESTURE</span>
+</div>
+<nav class="hidden md:flex gap-8">
+<!-- Landing page, no specific active state needed, just standard links -->
+<a class="text-on-surface-variant font-medium hover:text-on-surface transition-colors font-label-caps text-label-caps hover:bg-glass-white transition-all duration-300 px-3 py-2 rounded-DEFAULT" href="#">Studio</a>
+<a class="text-on-surface-variant font-medium hover:text-on-surface transition-colors font-label-caps text-label-caps hover:bg-glass-white transition-all duration-300 px-3 py-2 rounded-DEFAULT" href="#">Catalog</a>
+<a class="text-on-surface-variant font-medium hover:text-on-surface transition-colors font-label-caps text-label-caps hover:bg-glass-white transition-all duration-300 px-3 py-2 rounded-DEFAULT" href="#">Stylist AI</a>
+<a class="text-on-surface-variant font-medium hover:text-on-surface transition-colors font-label-caps text-label-caps hover:bg-glass-white transition-all duration-300 px-3 py-2 rounded-DEFAULT" href="#">Profile</a>
+</nav>
+<div class="flex items-center gap-4">
+<button class="text-on-surface hover:text-electric-violet transition-colors">
+<span class="material-symbols-outlined" data-weight="fill" style="font-variation-settings: 'FILL' 0;">shopping_bag</span>
+</button>
+<button class="text-on-surface hover:text-electric-violet transition-colors md:hidden">
+<span class="material-symbols-outlined" data-weight="fill" style="font-variation-settings: 'FILL' 0;">menu</span>
+</button>
+</div>
+</div>
+</header>
+<main>
+<!-- Hero Section -->
+<section class="relative min-h-[90vh] flex items-end pb-section-gap pt-32 px-margin-mobile md:px-margin-desktop overflow-hidden">
+<!-- Background Image -->
+<div class="absolute inset-0 z-0">
+<div class="w-full h-full bg-cover bg-center" data-alt="A highly stylized, cinematic fashion photograph of a model in avant-garde digital clothing. The lighting is dramatic, high-contrast chiaroscuro, emphasizing the futuristic textures of the garments. Subtle glowing violet augmented reality UI elements float subtly in the foreground, blending high-end editorial fashion photography with a sophisticated tech aesthetic in a dark, atmospheric studio setting." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuAdmxtlz_KdocdiYoRKmaM0tbgiRiDGpfUpgxtwTITvSq_bVPGBf7Vk0B5r7UZhOftsJOvmpdm-IfRmBuhJNieV7NXcOdzWpOEM0XO-i2SDIf_MA6aX3YY999Jj0sAHrmUb6OZaWoWglptLuLWFSRn0n2Wzi4B3Go7gZRcXxiVEzZO7S8LZZO-ce-dhqDUV2FQ0YfBqHtA3vgPsiIX8Pk1Hrm177EVTj0iKrTLC16ZSrc-Un2tEmLwumg')"></div>
+<div class="absolute inset-0 hero-overlay z-10"></div>
+</div>
+<!-- Content -->
+<div class="relative z-20 w-full max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-12 gap-gutter items-end">
+<div class="md:col-span-8 lg:col-span-9 flex flex-col gap-6">
+<h1 class="font-display-lg text-display-lg text-white max-w-4xl">YOUR DIGITAL ATELIER.</h1>
+<p class="font-body-lg text-body-lg text-on-surface-variant max-w-2xl">The future of fashion is virtual. Try on, style, and shop with AI precision.</p>
+</div>
+<div class="md:col-span-4 lg:col-span-3 flex md:justify-end">
+<a class="inline-flex items-center justify-center bg-ink-black text-white border border-white px-8 py-4 font-label-caps text-label-caps hover:bg-electric-violet hover:border-electric-violet transition-colors duration-300 rounded-none w-full md:w-auto" href="#studio">
+                        ENTER THE STUDIO
+                        <span class="material-symbols-outlined ml-2 text-[16px]">arrow_forward</span>
+</a>
+</div>
+</div>
+</section>
+<!-- How It Works Section -->
+<section class="py-section-gap px-margin-mobile md:px-margin-desktop bg-ink-black">
+<div class="max-w-7xl mx-auto">
+<div class="mb-16">
+<h2 class="font-headline-lg md:font-headline-lg text-headline-lg-mobile md:text-headline-lg text-white mb-4">Precision Engineering</h2>
+<p class="font-body-md text-body-md text-on-surface-variant max-w-xl">Our proprietary AI pipeline breaks down your image and reconstructs it with impeccable garment fitting.</p>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+<!-- Step 1 -->
+<div class="glass-panel p-8 rounded-lg relative overflow-hidden group">
+<div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent to-electric-violet opacity-50"></div>
+<div class="flex items-center justify-between mb-8">
+<span class="font-label-tech text-label-tech text-electric-violet">01 // SEGMENT</span>
+<span class="material-symbols-outlined text-on-surface-variant">layers</span>
+</div>
+<h3 class="font-headline-md text-headline-md text-white mb-4">Semantic Masking</h3>
+<p class="font-body-md text-body-md text-on-surface-variant">Advanced SegFormer models map body contours and existing garments with pixel-perfect accuracy.</p>
+<!-- Mini visual -->
+<div class="mt-8 h-32 w-full rounded bg-surface-container border border-surface-variant relative overflow-hidden">
+<div class="absolute inset-0 bg-cover bg-center opacity-40 grayscale group-hover:grayscale-0 transition-all duration-500" data-alt="A minimalist tech visualization showing a human silhouette being scanned by a glowing violet laser line. The background is a stark, dark grid. The image feels analytical, precise, and sophisticated, representing AI semantic segmentation in a high-end digital fashion context." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuAxXuhXpk2xKG1nIgPa4Gpe0iFUrRhOYbV2OXHZ-1r5moghk8-10OC1Z1P5dcCVlhs_8yLfJxRxnTL5ADokiBIMM9BHuu9MIq3k-u36ZxXm3FDPeuPjuTPToTcJ9imIBmpaFlKAOJ9EYxitouGjpGHlV6eM2KlZH2SLKaodkylTuio5qAa70_5arKgqdSpXudMfRVlFHA3wkgWMSJSnSIrbSvzIUhpibGkevDdKSh5ewtz-KWsRbSm8EQ')"></div>
+<div class="absolute inset-0 flex items-center justify-center">
+<div class="w-full px-4">
+<div class="h-[1px] w-full bg-surface-variant relative">
+<div class="absolute top-0 left-0 h-full bg-electric-violet w-0 group-hover:w-full transition-all duration-1000 ease-in-out"></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Step 2 -->
+<div class="glass-panel p-8 rounded-lg relative overflow-hidden group">
+<div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent to-electric-violet opacity-50"></div>
+<div class="flex items-center justify-between mb-8">
+<span class="font-label-tech text-label-tech text-electric-violet">02 // INPAINT</span>
+<span class="material-symbols-outlined text-on-surface-variant">brush</span>
+</div>
+<h3 class="font-headline-md text-headline-md text-white mb-4">Generative Fit</h3>
+<p class="font-body-md text-body-md text-on-surface-variant">Diffusion models seamlessly blend the selected garment onto your silhouette, respecting lighting, draping, and fabric physics.</p>
+<div class="mt-8 h-32 w-full rounded bg-surface-container border border-surface-variant relative overflow-hidden">
+<div class="absolute inset-0 bg-cover bg-center opacity-40 mix-blend-luminosity group-hover:mix-blend-normal transition-all duration-500" data-alt="A close-up abstract view of digital fabric weaving itself together. Threads of glowing violet and stark white construct a high-fashion garment against a deep black void. The texture is hyper-realistic yet clearly digitally synthesized, emphasizing the 'inpaint' and generative aspect of the technology." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuCBX7uYrg4V6pCHbO8JII0BMFZJrfKWvB46Otd7iMjBt8iJ_JfqfO11zcEN3NGwNjRuVEDSHEw1VX-cPpgXSHcRH1RyeJ4OAFkkqA9BgEk4vzUbtVX7az8Y4yJIw7kxARQUap5URw4oo4SeDdVHqthesE0CnRklWUFGrJmqb7ovfPfoPBnHfj7j5aIW8S9NJgTi6Rbc-35Rm9yQr6eWW0af2dkTRzbN_CHyuDvSzN7f1E0sU66vILywyQ')"></div>
+</div>
+</div>
+<!-- Step 3 -->
+<div class="glass-panel p-8 rounded-lg relative overflow-hidden group">
+<div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent to-electric-violet opacity-50"></div>
+<div class="flex items-center justify-between mb-8">
+<span class="font-label-tech text-label-tech text-electric-violet">03 // RECOMMEND</span>
+<span class="material-symbols-outlined text-on-surface-variant">auto_awesome</span>
+</div>
+<h3 class="font-headline-md text-headline-md text-white mb-4">Gemini Stylist</h3>
+<p class="font-body-md text-body-md text-on-surface-variant">Receive personalized styling advice, fabric insights, and complementary piece suggestions based on visual analysis.</p>
+<div class="mt-8 p-4 rounded bg-surface-container border border-surface-variant h-32 flex flex-col justify-end">
+<div class="flex items-center gap-2 mb-2">
+<div class="w-2 h-2 rounded-full bg-electric-violet animate-pulse"></div>
+<span class="font-label-tech text-label-tech text-on-surface-variant text-[10px]">ANALYZING STYLE...</span>
+</div>
+<div class="h-2 w-3/4 bg-surface-variant rounded-full mb-2"></div>
+<div class="h-2 w-1/2 bg-surface-variant rounded-full"></div>
+</div>
+</div>
+</div>
+</div>
+</section>
+</main>
+<!-- Footer -->
+<footer class="bg-ink-black dark:bg-ink-black full-width bottom border-t border-outline-variant/20 px-margin-desktop py-section-gap flex flex-col md:flex-row justify-between items-center w-full">
+<div class="mb-8 md:mb-0">
+<span class="font-headline-md text-headline-md font-bold text-on-surface">VESTURE</span>
+<p class="font-label-caps text-label-caps text-on-surface-variant mt-2">© 2024 VESTURE DIGITAL ATELIER. ALL RIGHTS RESERVED.</p>
+</div>
+<nav class="flex gap-6 flex-wrap justify-center">
+<a class="font-label-caps text-label-caps text-on-secondary-container hover:text-electric-violet transition-colors" href="#">Sustainability</a>
+<a class="font-label-caps text-label-caps text-on-secondary-container hover:text-electric-violet transition-colors" href="#">Terms of Service</a>
+<a class="font-label-caps text-label-caps text-on-secondary-container hover:text-electric-violet transition-colors" href="#">Privacy Policy</a>
+<a class="font-label-caps text-label-caps text-on-secondary-container hover:text-electric-violet transition-colors" href="#">Contact</a>
+</nav>
+</footer>
+</body></html>

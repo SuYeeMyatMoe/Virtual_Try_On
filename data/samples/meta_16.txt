@@ -1,0 +1,3 @@
+title: VITON-HD demo 16
+category: upper
+source: VITON-HD-style demo pair
