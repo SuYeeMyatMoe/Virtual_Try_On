@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import builtins
+import logging
 import os
 from functools import lru_cache
 from pathlib import Path
@@ -11,6 +13,33 @@ from dotenv import load_dotenv
 
 _ENV_PATH = Path(__file__).resolve().parents[1] / ".env"
 load_dotenv(_ENV_PATH, override=True)
+
+_HF_DOC_NOISE = (
+    "but not documented",
+    "Make sure to add it to the docstring",
+)
+
+
+def silence_transformers_autodoc() -> None:
+    """Hide Transformers 5.x autodoc print() noise for unused VL models."""
+    current = builtins.print
+    if getattr(current, "_vesture_quiet_hf", False):
+        return
+
+    def _print(*args, **kwargs):
+        if args:
+            msg = str(args[0])
+            if any(bit in msg for bit in _HF_DOC_NOISE):
+                return
+        return current(*args, **kwargs)
+
+    _print._vesture_quiet_hf = True  # type: ignore[attr-defined]
+    builtins.print = _print
+    logging.getLogger("transformers").setLevel(logging.ERROR)
+    logging.getLogger("google_genai.models").setLevel(logging.ERROR)
+
+
+silence_transformers_autodoc()
 
 
 def hf_token() -> Optional[str]:

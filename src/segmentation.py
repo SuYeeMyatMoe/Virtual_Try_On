@@ -9,9 +9,11 @@ import numpy as np
 import torch
 from PIL import Image
 from scipy import ndimage
-from transformers import SegformerForSemanticSegmentation, SegformerImageProcessor
 
-from .hf_auth import ensure_hf_login, hf_token
+from .hf_auth import ensure_hf_login, hf_token, silence_transformers_autodoc
+
+silence_transformers_autodoc()
+from transformers import SegformerForSemanticSegmentation, SegformerImageProcessor
 from .preprocess import normalize_garment_region
 
 MODEL_ID = "mattmdjaga/segformer_b2_clothes"

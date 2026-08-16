@@ -1426,6 +1426,22 @@ def _init_stylist_state() -> None:
     st.session_state.setdefault("stylist_color_board", None)
     st.session_state.setdefault("stylist_body_board", None)
     st.session_state.setdefault("stylist_board_presentation", None)
+    _drop_stylist_auto_intro()
+
+
+def _drop_stylist_auto_intro() -> None:
+    """Remove the old Analyze opener so chat stays empty until the shopper types."""
+    messages = list(st.session_state.get("stylist_messages") or [])
+    kept = []
+    for msg in messages:
+        body = str(msg.get("content") or "")
+        if msg.get("role") == "assistant" and "Ask what to wear, or tap a look below." in body:
+            continue
+        if msg.get("role") == "assistant" and body.startswith("I'll shop **") and "Good on you:" in body:
+            continue
+        kept.append(msg)
+    if kept != messages:
+        st.session_state["stylist_messages"] = kept
 
 
 def _refresh_stylist_boards(avatar: Image.Image, analysis: dict, presentation: str) -> None:
@@ -1874,31 +1890,7 @@ def stylist_tab():
         st.session_state["stylist_shown_ids"] = []
         st.session_state["stylist_all_recs"] = []
         _remember_recs(recs)
-        season = analysis.get("color_season") or "your palette"
-        undertone = analysis.get("undertone") or "neutral"
-        body = analysis.get("body_type") or "silhouette"
-        palette = [str(c) for c in (analysis.get("palette") or []) if str(c).strip()]
-        palette_line = ", ".join(palette[:5]) if palette else "your recommended set"
-        dept = analysis.get("presentation")
-        shop_line = (
-            "I'll shop **menswear** for you."
-            if dept == "man"
-            else "I'll shop **womenswear** for you."
-            if dept == "woman"
-            else "Here's a simple read from your photo."
-        )
-        st.session_state["stylist_messages"] = [
-            {
-                "role": "assistant",
-                "content": (
-                    f"{shop_line}\n\n"
-                    f"Your coloring is a **{undertone}** undertone in the **{season}** family, "
-                    f"with a **{body}** frame.\n\n"
-                    f"**Good on you:** {palette_line}.\n\n"
-                    "Ask what to wear, or tap a look below."
-                ),
-            }
-        ]
+        st.session_state["stylist_messages"] = []
 
     analysis = st.session_state.get("stylist_analysis")
     if analysis and avatar is not None:
@@ -2039,7 +2031,7 @@ def stylist_tab():
 
         messages = st.session_state.get("stylist_messages") or []
         if not messages:
-            st.caption("Chat anytime — attach a photo, record a voice note, or tap Analyze first for a personal reading.")
+            st.caption("Type a question when you want a recommendation. Analyze still fills the color set and looks above.")
         for i, msg in enumerate(messages):
             role = msg.get("role", "assistant")
             avatar_icon = ":material/person:" if role == "user" else ":material/auto_awesome:"
