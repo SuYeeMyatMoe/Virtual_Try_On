@@ -27,9 +27,9 @@ Online shoppers cannot physically try outfits before buying. Fit, color, and sty
 
 1. Uploads a full-body person photo and a garment image
 2. Segments the clothing region with **SegFormer**
-3. Virtually dresses the person with **IDM-VTON** (garment-image conditioned; CatVTON / SD2 fallback)
-4. Recommends **Top-5 similar items** with **FashionCLIP**
-5. Uses **Gemini LLM** to describe the garment, give style advice, and explain results
+3. Virtually dresses the person with **IDM-VTON** (garment-image conditioned; CatVTON / SD2 / local overlay fallback). **Lower-body** garments skip IDM-VTON (that Space is upper-only) and use CatVTON with `cloth_type=lower`
+4. Recommends **Top-5 similar items** with **FashionCLIP**. Stylist AI also filters by **menswear / womenswear**, body type, and color season
+5. Uses **Gemini** to caption garments, analyze body tone + silhouette, chat as a stylist, and **transcribe voice** into editable text
 6. Opens **Google Shopping** (`tbm=shop`) so the shopper can buy a similar item
 
 Users get a visual try-on **and** a natural-language stylist — not just a raw model output.
@@ -45,11 +45,13 @@ Users get a visual try-on **and** a natural-language stylist — not just a raw 
 | 3    | Segment clothing region + `seg_conf`      | SegFormer (HF)          |
 | 4    | Gate: require confidence ≥ **0.85**       | Custom scoring          |
 | 5    | Caption garment (color, fabric, style)    | Gemini Vision API       |
-| 6    | Dress person with the garment image       | IDM-VTON Space (CatVTON / SD2 fallback) |
+| 6    | Dress person with the garment image       | IDM-VTON (upper) → CatVTON (lower/dress) → SD2 → local overlay |
 | 7    | Score try-on quality                      | Composite confidence    |
-| 8    | Retrieve Top-5 similar catalog items      | FashionCLIP             |
+| 8    | Retrieve Top-5 similar catalog items      | FashionCLIP + color + department filter |
 | 9    | Write stylist advice + result explanation | Gemini Text API         |
-| 10   | Shop similar items                        | **Google Shopping** (`tbm=shop`) Buy / Find online |
+| 10   | Stylist AI: body tone, palette, menswear/womenswear | Gemini JSON + CLIP + SegFormer |
+| 11   | Chat / voice → editable transcript → recs | Gemini STT + FashionCLIP |
+| 12   | Shop similar items                        | **Google Shopping** (`tbm=shop`) Buy / Find online |
 
 ---
 
@@ -66,8 +68,8 @@ Person photo ──► SegFormer ──► mask + seg_conf
 Garment image ──► Gemini Vision ──► rich garment_des
                                       │
                                       ▼
-                    IDM-VTON Space (person + garment)
-                         CatVTON / SD2 fallback
+                    IDM-VTON Space (upper only)
+                         CatVTON / SD2 / local overlay
                                       │
                                       ▼
                                Try-on result
@@ -76,29 +78,43 @@ Garment image ──► Gemini Vision ──► rich garment_des
                     ▼                 ▼                 ▼
               FashionCLIP      Try-on confidence    Gemini Stylist
               Top-5 + shop      (composite score)   advice + explain
+              + department /
+                color filter
+
+Avatar photo ──► SegFormer labels + face LAB season
+              ──► CLIP man vs woman (presentation)
+              ──► Gemini JSON (palette, body_type, presentation)
+                      │
+                      ▼
+              Rank catalog (menswear/womenswear + palette)
+                      │
+Voice ──► Gemini STT ──► editable chat text ──► stylist reply
 ```
 
 ### 4.2 Deep Learning path (perception)
 
-1. **SegFormer** finds where clothes are on the body
-2. **IDM-VTON** transfers the garment *image* onto the body (CatVTON / SD2 if the Space is busy)
-3. **FashionCLIP** finds visually similar products
+1. **SegFormer** finds where clothes are on the body (waist-clipped `lower` masks)
+2. **IDM-VTON** transfers the garment *image* onto the torso when the region is `upper`; **CatVTON** handles `lower` / `dress` and Space queues; **SD2** then **local overlay** if APIs fail
+3. **FashionCLIP** finds visually similar products; Stylist ranking also applies palette and menswear/womenswear filters
 
 ### 4.3 LLM path (language / styling)
 
 1. **Gemini Vision** describes the garment → IDM-VTON `garment_des` / SD prompt
-2. **Gemini Text** gives occasion/season pairing advice
-3. **Gemini Text** explains confidence scores and Top-5 in plain English
-4. **Gemini Chat** (optional photos + voice) ranks catalog pieces; **Buy** opens Google Shopping
+2. **Gemini Vision JSON** (`analyze_avatar_llm`) reads skin undertone, 12-season palette, geometric body type, and **presentation** (`man` / `woman` / `unisex`) for shopping department
+3. Local fallback (`src/stylist.py`): face LAB season classifier + SegFormer shoulder/waist/hip + FashionCLIP zero-shot man vs woman
+4. **Gemini Text** gives occasion pairing and explains Studio scores
+5. **Gemini Chat** answers in short markdown (what to wear, why, up to 3 catalog titles). Grounded on palette, body type, and department
+6. **Gemini audio** transcribes a voice note; the UI shows the transcript as **editable text** before send
+7. **Buy** opens Google Shopping for the ranked SKU
 
 ### 4.4 Gemini adaptation (not full fine-tuning)
 
 We use **pretrained Gemini via API inference**, adapted with:
 
-- Fashion-stylist system prompts
+- Fashion-stylist system prompts (friendly shopper copy, JSON avatar schema)
 - Few-shot examples
-- Multimodal garment image input
-- Grounding on SegFormer / FashionCLIP scores
+- Multimodal garment JPEG + person JPEG + voice audio
+- Grounding on SegFormer / FashionCLIP scores, palette, body type, and `presentation`
 
 **Viva answer:** _We did not fine-tune Gemini weights. We adapted pretrained Gemini through inference + domain prompting, grounded on our deep-learning outputs — allowed under “transfer learning, fine-tuning, or model inference.”_
 
@@ -110,9 +126,11 @@ We use **pretrained Gemini via API inference**, adapted with:
 | ------------------------- | --------------------------------------------------------------------------- |
 | **Visual try-on**         | Before/after image of the user “wearing” the garment                        |
 | **Confidence scores**     | Segmentation, CLIP similarity, mask quality, try-on composite (≥ 0.85 gate) |
-| **Top-5 recommendations** | Similar catalog items with similarity %                                     |
+| **Top-5 recommendations** | Studio: FashionCLIP cosine. Stylist: cosine + **color boost**, **avoid-color penalty**, and **menswear/womenswear** filter |
 | **Shop actions**          | Each match opens a **Google Shopping** search for that product title        |
 | **AI stylist copy**       | Garment description + advice + explanation (with Gemini key)                |
+| **Stylist analysis**      | Body tone, recommended color set, silhouette, shopping department (Auto / Woman / Man) |
+| **Voice chat**            | Mic → Gemini transcript → edit in the chatbot → send                        |
 | **Demo-ready UI**         | Polished Streamlit app (VESTURE brand)                                      |
 
 **End-to-end experience:** upload → dress → explain → shop.
@@ -134,7 +152,7 @@ Each row is **what we use** and **which part of the app it serves**.
 | **SciPy `ndimage`** | Mask **dilate**, Gaussian **feather**, connected-component **mask_quality** |
 | **NumPy / Pandas** | `embeddings.npy`, `catalog.csv`, cosine `S @ q` |
 | **gradio_client** | Call **IDM-VTON** and **CatVTON** Hugging Face Spaces (Studio try-on) |
-| **huggingface_hub / Inference API** | Download weights; **SD 2 Inpainting** last-resort try-on |
+| **huggingface_hub / Inference API** | Download weights; **SD 2 Inpainting** last-resort try-on via `router.huggingface.co/hf-inference` (legacy `api-inference.huggingface.co` is retired) |
 | **google-genai** | **Gemini 2.0 Flash**: garment caption, advice, explain, avatar JSON, chat, voice STT |
 | **python-dotenv** | Load `HF_TOKEN`, `GOOGLE_API_KEY`, `CONFIDENCE_GATE` from `.env` |
 | **requests / datasets** | Build catalog from HF Dataset Viewer / DeepFashion-style stills |
@@ -147,12 +165,12 @@ Each row is **what we use** and **which part of the app it serves**.
 | **Studio — upload / preprocess** | Person + garment photos | Streamlit + Pillow (`src/preprocess.py`) |
 | **Studio — mask** | Clothing region + `seg_conf` | PyTorch + Transformers **SegFormer** + SciPy (`src/segmentation.py`) |
 | **Studio — gate** | Block try-on if `seg_conf < 0.85` | `src/confidence.py` |
-| **Studio — try-on** | Dress the person | **IDM-VTON** Space → **CatVTON** → **SD2** Inference API (`src/tryon.py`) |
+| **Studio — try-on** | Dress the person | **IDM-VTON** (upper only) → **CatVTON** `/submit_function` + mask layer → **SD2** router → **local overlay** (`src/tryon.py`) |
 | **Studio — try-on score** | `tryon_conf` from seg + CLIP + mask | FashionCLIP + `summarize_scores` |
 | **Studio — Top-5** | Similar SKUs | FashionCLIP + `data/embeddings.npy` (`src/recommend.py`) |
 | **Studio — copy** | Caption, advice, explain | Gemini API (`src/llm_advisor.py`) |
 | **Catalog** | Browse / Save / Buy | Pandas CSV + Streamlit + Google Shopping URLs |
-| **Stylist AI** | Avatar JSON, chat, voice, ranked recs | Gemini + FashionCLIP text/image towers |
+| **Stylist AI** | Body-tone JSON, department, chat, **editable voice**, ranked recs | Gemini + FashionCLIP + SegFormer (`src/stylist.py`) |
 | **Profile** | Saved pieces | `data/wishlist.json` + catalog rows |
 
 ### API keys
@@ -160,7 +178,7 @@ Each row is **what we use** and **which part of the app it serves**.
 | Key | Purpose | Required? |
 | --- | --- | --- |
 | `HF_TOKEN` | IDM-VTON / CatVTON Spaces + Hub downloads + SD2 fallback | Yes for live try-on |
-| `GOOGLE_API_KEY` | Gemini stylist / garment caption / chat / STT | Optional (template fallback) |
+| `GOOGLE_API_KEY` | Gemini stylist / garment caption / chat / **voice STT**. Same key as Google AI Studio “Gemini API key” (`GEMINI_API_KEY` also works) | Optional (template fallback; voice needs the key) |
 | `CONFIDENCE_GATE` | Override the 0.85 threshold (default 0.85) | Optional |
 
 **Note:** No OpenAI key. Shopping uses public Google Shopping search URLs — no Shopping API key.
@@ -176,12 +194,13 @@ VESTURE uses **pretrained checkpoints only**. We run inference / transfer learni
 | Job in the app | Field | Model | Links |
 | --- | --- | --- | --- |
 | Clothing **mask** + `seg_conf` on the person photo | Computer vision (segmentation) | **SegFormer-B2 Clothes** `mattmdjaga/segformer_b2_clothes` | [HF model](https://huggingface.co/mattmdjaga/segformer_b2_clothes) · [paper](https://arxiv.org/abs/2105.15203) · [ATR data](https://huggingface.co/datasets/mattmdjaga/human_parsing_dataset) |
-| Primary **try-on** (person + garment **image**) | Computer vision (diffusion) | **IDM-VTON** Space `yisol/IDM-VTON` | [Space](https://huggingface.co/spaces/yisol/IDM-VTON) · [weights](https://huggingface.co/yisol/IDM-VTON) · [paper](https://arxiv.org/abs/2403.05139) |
-| Fallback try-on if the Space is queued | Computer vision (diffusion) | **CatVTON** Space `zhengchong/CatVTON` | [Space](https://huggingface.co/spaces/zhengchong/CatVTON) · [weights](https://huggingface.co/zhengchong/CatVTON) · [paper](https://arxiv.org/abs/2407.15886) |
-| Last-resort try-on (**mask + text**) | Computer vision (inpainting) | **SD 2 Inpainting** `stabilityai/stable-diffusion-2-inpainting` | [HF model](https://huggingface.co/stabilityai/stable-diffusion-2-inpainting) |
+| Primary **try-on** (upper-body garment **image**) | Computer vision (diffusion) | **IDM-VTON** Space `yisol/IDM-VTON` `/tryon` | [Space](https://huggingface.co/spaces/yisol/IDM-VTON) · [weights](https://huggingface.co/yisol/IDM-VTON) · [paper](https://arxiv.org/abs/2403.05139) |
+| Fallback try-on (lower/dress + Space queue) | Computer vision (diffusion) | **CatVTON** Space `zhengchong/CatVTON` `/submit_function` | [Space](https://huggingface.co/spaces/zhengchong/CatVTON) · [weights](https://huggingface.co/zhengchong/CatVTON) · [paper](https://arxiv.org/abs/2407.15886) |
+| Last-resort try-on (**mask + text**), then overlay | Computer vision (inpainting / paste) | **SD 2 Inpainting** via HF router; `run_local_overlay` | [HF model](https://huggingface.co/stabilityai/stable-diffusion-2-inpainting) |
 | **Top-5** similar catalog items | Vision–language (embeddings) | **Marqo FashionCLIP** `Marqo/marqo-fashionCLIP` | [HF model](https://huggingface.co/Marqo/marqo-fashionCLIP) · [blog](https://www.marqo.ai/blog/search-model-for-fashion) |
+| Menswear vs womenswear from the avatar | Vision–language (zero-shot) | FashionCLIP / CLIP text prompts | Same encoder as Top-5 |
 | Backup encoder | Vision–language | **CLIP ViT-B/32** `openai/clip-vit-base-patch32` | [HF model](https://huggingface.co/openai/clip-vit-base-patch32) · [paper](https://arxiv.org/abs/2103.00020) |
-| Caption, advice, explain, chat, voice | NLP / multimodal LLM | **Gemini 2.0 Flash** | [API](https://ai.google.dev/) · [generateContent](https://ai.google.dev/api/generate-content) |
+| Caption, body-tone JSON, chat, **voice STT** | NLP / multimodal LLM | **Gemini 2.0 Flash** | [API](https://ai.google.dev/) · [generateContent](https://ai.google.dev/api/generate-content) |
 | **Buy / Find online** | Search (not a neural net) | **Google Shopping** `tbm=shop` | [Help](https://support.google.com/googleshopping/answer/9128904) |
 
 | Checkpoint / source | Pretrained on (authors) | Runs on |
@@ -218,6 +237,7 @@ Override IDs in `.env` if needed: `VTON_SPACE`, `CATVTON_SPACE`, `HF_INPAINT_MOD
 - **Paper:** Choi et al., *Improving Diffusion Models for Authentic Virtual Try-on in the Wild*, ECCV 2024.
 - **Architecture:** **SDXL** inpainting UNet (TryOnNet) + frozen **GarmentNet** (parallel UNet, low-level texture via self-attention) + trainable **IP-Adapter** (high-level garment identity via cross-attention). Detailed Gemini `garment_des` is passed as the text condition.
 - **Inputs we send:** person PNG, garment PNG, caption, 30 denoise steps, seed 42, Space API `/tryon`.
+- **Region limit:** `_idm_supports()` in `src/tryon.py` calls this Space **only for `upper`**. Public IDM-VTON is VITON-HD upper-body; pants/dresses would paint onto the torso.
 - **Why this checkpoint:** garment-**image** conditioning keeps prints and logos; text-only inpaint cannot.
 - **License:** CC-BY-NC-SA 4.0 (class demo, not commercial).
 
@@ -225,13 +245,16 @@ Override IDs in `.env` if needed: `VTON_SPACE`, `CATVTON_SPACE`, `HF_INPAINT_MOD
 
 - **Paper:** Chong et al., *Concatenation Is All You Need for Virtual Try-On with Diffusion Models*, ICLR 2025.
 - **Idea:** spatially concatenate person + garment; simplified UNet (~899M total, ~49.6M trainable); no extra ReferenceNet / text encoder at inference.
-- **When we call it:** IDM-VTON Space queued or error. Cloth type mapped to `upper` / `lower` / `overall`.
+- **When we call it:** IDM-VTON Space queued/error, **or** the garment region is `lower` / `dress` (public IDM-VTON is VITON-HD **upper-body only** — pants would paint onto the shirt).
+- **API:** live Space names are `/submit_function` (mask-based), then `/submit_function_flux` only if that endpoint is missing. **`/predict` is not published.** Person input is a Gradio ImageEditor dict; **`layers[0]` must exist** (SegFormer mask, or a blank layer so automasker runs).
+- Cloth type mapped to `upper` / `lower` / `overall`. Lower masks are **waist-clipped** in `src/segmentation.py` so trousers do not replace the torso.
 
 ### 7.4 Stable Diffusion 2 Inpainting (last resort)
 
-- Mask-guided fill: **white = replace clothing**, black = keep body/background.
+- Mask-guided fill: **white = replace clothing**, black = keep.
 - Prompt from Gemini caption or a template (`src/preprocess.py`). Negative prompt strips extra limbs / watermark artifacts.
-- Used only if both Spaces fail, or if no garment image is provided.
+- HTTP host: **`https://router.huggingface.co/hf-inference/models/{model}`** (`HF_INFERENCE_URL`). The old `api-inference.huggingface.co` host is decommissioned (DNS / 410).
+- If Spaces and SD2 both fail and a garment image is present: **`run_local_overlay`** pastes the garment into the mask bbox (spatially correct, not photorealistic) instead of stretching a cached upper-body demo onto pants.
 
 ### 7.5 Marqo FashionCLIP (recommendation encoder)
 
@@ -239,12 +262,13 @@ Override IDs in `.env` if needed: `VTON_SPACE`, `CATVTON_SPACE`, `HF_INPAINT_MOD
 - **Domain adapt:** Generalized Contrastive Learning (GCL) on titles, descriptions, **color, material, category, style** — not captions alone. ~150M parameters. Trained on **>1M** fashion SKUs.
 - **Why not vanilla CLIP:** fashion language (silhouette, knit, kurta, chino) and product-still retrieval. Marqo reports **AvgRecall 0.192 / Recall@1 0.094 / MRR 0.200** vs FashionCLIP 2.0 **0.163 / 0.077 / 0.165** on Atlas, DeepFashion In-shop, DeepFashion Multimodal, Fashion200k, KAGL, Polyvore.
 - **Load path:** `open_clip.create_model_and_transforms("hf-hub:Marqo/marqo-fashionCLIP")`. Fallback: Hugging Face CLIP ViT-B/32.
+- **Stylist ranking extras** (`src/recommend.py`): color synonym boost (`color_weight` 0.22 avatar / 0.35 chat), **avoid_colors** penalty, **audience** filter from title/category (`Men` / `Women` / dress-like → woman; kidswear dropped for adult recs). Zero-shot `infer_clothing_audience` compares the avatar to “a photograph of a man” vs “a photograph of a woman”.
 
 ### 7.6 Why this stack
 
 - SegFormer: fashion labels + CPU-friendly.
-- IDM-VTON: best open garment-image try-on without a local GPU.
-- CatVTON / SD2: queue and API resilience.
+- IDM-VTON: best open garment-image try-on without a local GPU (upper-body).
+- CatVTON / SD2 / overlay: lower-body, queues, and dead Inference-API host.
 - FashionCLIP: SOTA-style fashion retrieval vs generic CLIP.
 - Gemini: multimodal stylist layer (image + text + audio) without training an LLM.
 
@@ -262,7 +286,7 @@ These are **proxy scores** (heuristics + cosine), **not** calibrated probabiliti
 | **`mask_quality`** | Whether the mask looks like a single clothing region | `0.5 · coverage_score + 0.5 · connectedness`. Coverage: 1.0 if 5–55% of the image is white; lower if tiny or huge. Connectedness: largest blob / all clothing pixels (penalizes speckles). | Soft: folded into `tryon_conf` (weight 0.2) |
 | **`clip_sim`** | Did the try-on keep the garment look? | FashionCLIP encode **garment** (or person mask-crop) and **try-on cropped to the mask bbox**; **cosine** of L2-normalized vectors. If CLIP fails, placeholder 0.5. | Soft: folded into `tryon_conf` (weight 0.4) |
 | **`tryon_conf`** | Overall Studio quality | `0.4·seg_conf + 0.4·clip_sim + 0.2·mask_quality`, clipped to [0, 1] | **Soft flag:** `passes_tryon_gate` if ≥ 0.85 (does not block; Gemini is told to be honest if below) |
-| **`reco_conf` / `similarity`** | How close a catalog SKU is | Cosine of FashionCLIP query vs `embeddings.npy` row. Color hint can add +0.04–0.08 for ranking only. | Highlight tile if ≥ 0.85 (`high_confidence`) |
+| **`reco_conf` / `similarity`** | How close a catalog SKU is | Cosine of FashionCLIP query vs `embeddings.npy` row. Palette hints add **+0.22–0.35**; avoid-colors subtract the same weight. Matching menswear/womenswear titles get **+0.05**; wrong department and kidswear are **dropped**. | Highlight tile if ≥ 0.85 (`high_confidence`) |
 
 ```text
 seg_conf     = mean( softmax(SegFormer)[chosen_labels].max  on clothing pixels )
@@ -277,7 +301,7 @@ reco_conf    = cosine( FashionCLIP(query) , catalog_embedding_i )
 ```text
 1. SegFormer → mask + seg_conf
 2. if seg_conf < 0.85  → FAIL pill, stop (no IDM-VTON)
-3. IDM-VTON / CatVTON / SD2 → result image
+3. IDM-VTON (upper) / CatVTON (lower + fallback) / SD2 / local overlay → result image
 4. clip_sim on mask-crop vs garment
 5. mask_quality on the same mask
 6. tryon_conf composite → PASS/FAIL vs 0.85 (informational)
@@ -295,7 +319,9 @@ Course requirement: show a confidence threshold. **0.85** is a strict filter on 
 - No human A/B study.
 - `tryon_conf` is **not** a temperature-scaled softmax of IDM-VTON.
 
----### 7.8 Fine-tuning (authors vs this project)
+---
+
+### 7.8 Fine-tuning (authors vs this project)
 
 **We do not fine-tune.** Authors already fine-tuned the checkpoints we load. We only run **inference** and **prompt adaptation**.
 
@@ -375,11 +401,12 @@ Gemini is used as a **pretrained inference API**. Weights stay on Google’s ser
 | `caption_garment` | garment JPEG + text | temp **0.4**, max tokens **280**, `SYSTEM_STYLIST` | One-sentence `garment_des` for IDM-VTON / SD2 |
 | `style_advice` | text (caption, Top-5, scores) | same | Occasion / pairing copy |
 | `explain_result` | text (engine, `seg_conf`, CLIP, gate, Top-5) | same | Plain-English result card |
-| `analyze_avatar_llm` | person JPEG | temp **0.3**, max tokens **700**, JSON MIME, `SYSTEM_AVATAR` | Color season, undertone, palette, body type |
-| `stylist_chat` | text + optional photos + voice | temp **0.6**, max tokens **512**, `SYSTEM_CHAT`, last 8 turns | Conversational stylist |
-| `transcribe_audio` | WAV/audio bytes | default generate | Transcript of a voice note |
+| `analyze_avatar_llm` | person JPEG | temp **0.3**, max tokens **700**, JSON MIME, `SYSTEM_AVATAR` | 12-season, undertone, palette, avoid_colors, body_type, **presentation** |
+| `stylist_chat` | text + optional photos | temp **0.6**, max tokens **512**, `SYSTEM_CHAT`, last 8 turns | Markdown shopper reply (≤90 words, up to 3 catalog lines) |
+| `transcribe_audio` | WAV / WebM / OGG / MP4 bytes | temp **0.0**, max tokens **400**; MIME sniff + model retry | `(transcript, error)` — UI stages text for edit before send |
+| `local_stylist_reply` | (no API) | — | Template markdown if Gemini is down |
 
-Grounding rules in the system prompt: do not invent brands; rank catalog titles we actually retrieved; stay inside the avatar palette when it exists.
+Grounding: do not invent brands; rank catalog titles we actually retrieved; stay inside the avatar palette; **menswear never lists a women's dress / kurta / skirt / blouse**. Voice needs `GOOGLE_API_KEY` (same key as Google AI Studio “Gemini API key”; `GEMINI_API_KEY` also works). Caption / chat still fall back to templates without a key.
 
 ### 8.3 System prompts (from `src/llm_advisor.py`)
 
@@ -393,9 +420,9 @@ Ground every claim in the garment description, confidence scores,
 or recommended catalog titles you are given. Do not invent brands.
 ```
 
-**`SYSTEM_CHAT`** (Stylist AI — temp 0.6, 512 tokens, last 8 turns): creative-director rules (silhouette, color, fabric, occasion); rank catalog pieces; honor photos and voice notes; stay in the client palette; 2–6 sentences; no invented brands. Includes few-shot: garden wedding / cool undertones, and casual weekend / pear shape.
+**`SYSTEM_CHAT`** (Stylist AI — temp 0.6, 512 tokens, last 8 turns): friendly personal shopper, markdown, under 90 words; numbered list of up to 3 catalog titles; menswear vs womenswear rules. Few-shots: Soft Summer colors, and a fashion-show look for a man. Full string: [`MODELS.md`](MODELS.md) §4.2.
 
-**`SYSTEM_AVATAR`** (JSON profile — temp 0.3, 700 tokens): analyze the person; kind; no brand names; never comment on attractiveness; **JSON only** (`color_season`, `undertone`, `palette`, `body_type`, …).
+**`SYSTEM_AVATAR`** (JSON profile — temp 0.3, 700 tokens): analyze the person; kind; no brand names; never comment on attractiveness; set **`presentation`** to `man` / `woman` / `unisex` for shopping department; **do not default to Light Spring**. JSON keys: `color_season`, `undertone`, `palette`, `avoid_colors`, `color_notes`, `body_type`, `presentation`, `body_notes`, `style_direction`, `silhouette_tips`, `occasions`.
 
 **Caption few-shot** sent with the garment JPEG:
 
@@ -413,8 +440,29 @@ Full prompt strings: [`MODELS.md`](MODELS.md) §4.
 - No LoRA / Vertex supervised fine-tune of Gemini.
 - No OpenAI, Claude, or local GGUF LLM.
 - Caption timeout ~25s; failures fall back to a template such as “a navy cotton crew-neck t-shirt…”.
+- Voice STT has no template fallback — it needs `GOOGLE_API_KEY`.
 
 **Viva:** *Pretrained Gemini via API inference + domain prompting, grounded on our DL outputs — allowed as transfer learning / model inference.*
+
+### 8.5 Stylist AI analysis, voice, and recs (`src/stylist.py`)
+
+**Analyze (body tone → color set → looks)**
+
+1. SegFormer label map: face (id 11) median RGB for undertone; arms only if no face; hair for contrast.
+2. Local **12-season** classifier (`_season_from_rgb`): LAB hue / value / chroma → season, undertone, palette, `avoid_colors`. Does not default to Light Spring.
+3. Geometric **body type** from shoulder / waist / hip bands on the label map.
+4. **`presentation`:** FashionCLIP zero-shot man vs woman (`infer_clothing_audience`); dress/skirt vs pants prior; Gemini JSON `presentation`; UI **Shop for** = Auto / Woman / Man (`resolve_presentation` — override wins).
+5. Gemini JSON merge (`analyze_avatar`): if Gemini says Light Spring but the local season differs, keep the **local** season/palette.
+6. Body copy is collapsed to **≤3 sentences** (`compact_body_copy`).
+7. `catalog_for_avatar` ranks the shop with palette weight **0.22**, avoid-color penalty, and department filter.
+
+**Voice**
+
+Mic audio is **not** sent straight into chat. `transcribe_audio` sniffs WAV / WebM / OGG / MP4, retries Gemini models and MIME types, rejects clips under **2500 bytes**. The transcript lands in an **editable** text area (Send / Discard). `app.py` reloads `src.llm_advisor` before STT so Streamlit cache does not keep a stale function.
+
+**Chat recs**
+
+`catalog_for_query` enriches the typed (or transcribed) request with “menswear men's clothing…” or “womenswear…”, palette, season, body type; FashionCLIP text tower; color weight **0.35**; same audience filter. Chat lists **up to 3** titles.
 
 ---
 
@@ -494,17 +542,23 @@ DF020, Nike Women Purple Polo T-shirt, upper, purple, data/catalog/images/df_upp
 ```
 
 - **Visual index:** FashionCLIP image vectors in `embeddings.npy` (row *i* ↔ CSV row *i*), L2-normalized so **dot product = cosine**.
-- **Text index:** the same encoder’s text tower (`recommend_from_text`) for Stylist queries such as “garden wedding, cool undertones”.
-- **Color boost:** +0.04–0.08 if the row color matches Gemini / avatar palette hints.
-- **Output:** Top-**5** dicts with `similarity` (recommendation confidence) and `high_confidence` if cosine ≥ **0.85**.
+- **Text index:** the same encoder’s text tower (`recommend_from_text`) for Stylist queries.
+- **Studio Top-5:** cosine vs the garment image (`recommend_top_k`, default color weight 0.08 if hints are passed; Studio currently passes none).
+- **Stylist ranking** (`src/recommend.py` `_rank_catalog`):
+  - Palette synonym **boost** (`color_weight` **0.22** avatar / **0.35** chat).
+  - **`avoid_colors`** subtract the same weight.
+  - Matching menswear/womenswear titles **+0.05**.
+  - **Drop** the other department and **kidswear** (`_audience_ok`). Dress / skirt / kurta titles count as womenswear.
+  - Catalog **~95** SKUs; about **33** pass the man filter (no dresses).
+- **Output:** Top-**5** dicts with `similarity` and `high_confidence` if cosine ≥ **0.85**. Chat surfaces up to **3** titles.
 
 Queries:
 
-| Query | Encoder input | Typical screen |
-| --- | --- | --- |
-| After try-on | Garment image (or mask-crop of the result) | Studio “similar items” |
-| Avatar styling | Person photo + optional text | Stylist AI |
-| Typed / voice request | FashionCLIP **text** embedding | Stylist chat |
+| Query | Encoder input | Filters | Typical screen |
+| --- | --- | --- | --- |
+| After try-on | Garment image (or mask-crop) | Cosine only | Studio “similar items” |
+| Analyze avatar | Person photo | Palette + avoid + `presentation` | Stylist looks board |
+| Typed / voice request | FashionCLIP **text** (query + department words) | Palette + avoid + audience | Stylist chat |
 
 This is **content-based visual retrieval** (deep metric learning), not collaborative filtering. No user–item rating matrix.
 
@@ -513,7 +567,11 @@ This is **content-based visual retrieval** (deep metric learning), not collabora
 ```text
 q ← FashionCLIP.encode(query_image or query_text)     # unit vector
 S ← embeddings.npy                                    # N × D, unit rows
-score_i = S_i · q   (+ small color boost)
+score_i = S_i · q
+        + color_weight · palette_match
+        − color_weight · avoid_match
+        + 0.05 · department_match
+drop if wrong department or kidswear
 Top-5 = argsort(score) descending
 ```
 
@@ -541,13 +599,14 @@ Flow:
 Try-on garment / avatar / text
         │
         ▼
-FashionCLIP cosine vs local catalog (DeepFashion-style stills)
+FashionCLIP cosine vs local catalog
+        + palette / avoid / menswear filter (Stylist)
         │
         ▼
 Top-5 titles + similarity %
         │
         ▼
-Gemini explains why they match
+Gemini explains why they match (chat: up to 3 titles)
         │
         ▼
 Buy → Google Shopping search for that title
@@ -570,7 +629,10 @@ Buy → Google Shopping search for that title
 - Results: before/after, mask, confidence metrics
 - Top-5 similar items (FashionCLIP) + **Buy / Find online → Google Shopping**
 - LLM panels: AI garment description, stylist advice, result explanation
-- Stylist chat: text, image attach, voice (Gemini transcribe)
+- Stylist **Analyze:** body tone, recommended color set, silhouette, **Shop for** Auto / Woman / Man
+- Stylist looks ranked by FashionCLIP + palette + menswear/womenswear
+- Stylist chat: markdown replies; catalog titles as a numbered list (max 3)
+- Voice: Gemini STT → **editable** chat text → Send / Discard (does not auto-send)
 
 ---
 
@@ -587,12 +649,12 @@ Virtual_Try_On/
 ├── src/
 │   ├── preprocess.py
 │   ├── segmentation.py    # SegFormer
-│   ├── tryon.py           # IDM-VTON → CatVTON → SD2
+│   ├── tryon.py           # IDM-VTON (upper) → CatVTON → SD2 router → overlay
 │   ├── confidence.py
-│   ├── recommend.py       # FashionCLIP Top-5 + Google Shopping URLs
+│   ├── recommend.py       # FashionCLIP Top-5 + audience + color + Shopping URLs
 │   ├── catalog_builder.py # DeepFashion / Lamoda subset + embeddings
-│   ├── llm_advisor.py     # Gemini 2.0 Flash caption / advice / chat / STT
-│   ├── stylist.py         # Avatar analysis + catalog ranking
+│   ├── llm_advisor.py     # Gemini caption / JSON avatar / chat / STT
+│   ├── stylist.py         # 12-season, presentation, catalog_for_*
 │   └── demo_samples.py    # VITON-HD-style Studio pairs
 ├── data/catalog/
 ├── data/samples/
@@ -609,7 +671,7 @@ Virtual_Try_On/
 - Pretrained HF models only (no training from scratch)
 - Works without a local GPU (IDM-VTON / CatVTON on HF Spaces)
 - Clear confidence gate (≥ 0.85)
-- DL + LLM hybrid story for presentation
+- DL + LLM hybrid: try-on, body-tone analysis, department-aware recs, editable voice
 - Polished Streamlit demo UI
 
 ### Limitations
@@ -635,7 +697,7 @@ Virtual_Try_On/
 | Pretrained DL models | SegFormer-B2, IDM-VTON, CatVTON, SD2, FashionCLIP     |
 | Transfer / inference | HF Spaces + Gemini `generateContent`; prompt adaptation |
 | Dataset description  | ATR, VITON-HD, Dress Code, DeepFashion/Lamoda catalog   |
-| Recommendation data  | Local FashionCLIP index; shop-out via Google Shopping   |
+| Recommendation data  | FashionCLIP index + palette / menswear filters; shop-out via Google Shopping |
 | Streamlit UI         | Title, description, upload, predict, result, confidence |
 | Analysis             | Confidence metrics, strengths/limits                    |
 

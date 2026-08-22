@@ -12,6 +12,7 @@ from __future__ import annotations
 import base64
 import html
 import io
+from datetime import datetime
 from pathlib import Path
 
 import streamlit as st
@@ -36,6 +37,7 @@ from src.stylist import (
     resolve_presentation,
     swatch_hex,
 )
+from src.analysis_report import build_analysis_pdf
 from src.tryon import list_demo_pairs, try_on_vton
 
 ROOT = Path(__file__).resolve().parent
@@ -1471,6 +1473,31 @@ def _remember_recs(items: list) -> None:
     st.session_state["stylist_recs"] = items
 
 
+def _stylist_pdf_bytes(avatar: Image.Image, analysis: dict, presentation: str) -> bytes:
+    """Build the analysis PDF once per analysis + rec set."""
+    recs = st.session_state.get("stylist_recs") or []
+    token = (
+        str(analysis.get("color_season") or ""),
+        str(analysis.get("body_type") or ""),
+        tuple(str(c) for c in (analysis.get("palette") or [])),
+        tuple(str(r.get("id")) for r in recs),
+        presentation,
+    )
+    if st.session_state.get("stylist_pdf_token") == token and st.session_state.get("stylist_pdf_bytes"):
+        return st.session_state["stylist_pdf_bytes"]
+    pdf_bytes = build_analysis_pdf(
+        avatar,
+        analysis,
+        color_board=st.session_state.get("stylist_color_board"),
+        body_board=st.session_state.get("stylist_body_board"),
+        recs=recs,
+        presentation=presentation,
+    )
+    st.session_state["stylist_pdf_token"] = token
+    st.session_state["stylist_pdf_bytes"] = pdf_bytes
+    return pdf_bytes
+
+
 def _render_stylist_looks(results: list, *, key_prefix: str) -> None:
     if not results:
         st.info("No catalog pieces yet. Analyze an avatar or ask the stylist for a look.")
@@ -1891,6 +1918,8 @@ def stylist_tab():
         st.session_state["stylist_all_recs"] = []
         _remember_recs(recs)
         st.session_state["stylist_messages"] = []
+        st.session_state.pop("stylist_pdf_token", None)
+        st.session_state.pop("stylist_pdf_bytes", None)
 
     analysis = st.session_state.get("stylist_analysis")
     if analysis and avatar is not None:
@@ -1956,6 +1985,24 @@ def stylist_tab():
                         width="stretch",
                     )
                 st.markdown("</div>", unsafe_allow_html=True)
+
+        pdf_col, _ = st.columns([1.4, 2.6])
+        with pdf_col:
+            if avatar is not None:
+                try:
+                    pdf_name = f"vesture-analysis-{datetime.now():%Y%m%d-%H%M}.pdf"
+                    pdf_bytes = _stylist_pdf_bytes(avatar, analysis, presentation)
+                    st.download_button(
+                        "Download analysis PDF",
+                        data=pdf_bytes,
+                        file_name=pdf_name,
+                        mime="application/pdf",
+                        type="secondary",
+                        width="stretch",
+                        help="Save your color season, palette, silhouette notes, and catalog picks.",
+                    )
+                except Exception as exc:
+                    st.caption(f"PDF export unavailable: {exc}")
 
         st.markdown('<hr class="hr-rule" />', unsafe_allow_html=True)
         _section_head(

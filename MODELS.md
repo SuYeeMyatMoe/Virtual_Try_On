@@ -2,7 +2,7 @@
 
 Companion to [`overview.md`](overview.md). This file is the full map of **which model does which job**, with **links**, **how fine-tuning works**, **system prompts**, **computer vision vs NLP**, and the **Studio try-on mask pipeline**.
 
-Code: `src/segmentation.py`, `src/tryon.py`, `src/preprocess.py`, `src/confidence.py`, `src/recommend.py`, `src/llm_advisor.py`, `app.py`.
+Code: `src/segmentation.py`, `src/tryon.py`, `src/preprocess.py`, `src/confidence.py`, `src/recommend.py`, `src/llm_advisor.py`, `src/stylist.py`, `app.py`.
 
 ---
 
@@ -11,12 +11,13 @@ Code: `src/segmentation.py`, `src/tryon.py`, `src/preprocess.py`, `src/confidenc
 | Job in the app | Field | Model we call | Checkpoint / API | Official links |
 | --- | --- | --- | --- | --- |
 | Find clothes on the body + clothing **mask** | **Computer vision** (semantic segmentation) | **SegFormer-B2 Clothes** | `mattmdjaga/segformer_b2_clothes` | [Model card](https://huggingface.co/mattmdjaga/segformer_b2_clothes) · [Paper](https://arxiv.org/abs/2105.15203) · [Train set ATR](https://huggingface.co/datasets/mattmdjaga/human_parsing_dataset) |
-| Primary **virtual try-on** (person + garment **image**) | **Computer vision** (conditional diffusion) | **IDM-VTON** | Space `yisol/IDM-VTON` | [Space demo](https://huggingface.co/spaces/yisol/IDM-VTON) · [Weights](https://huggingface.co/yisol/IDM-VTON) · [Paper](https://arxiv.org/abs/2403.05139) · [GitHub](https://github.com/yisol/IDM-VTON) |
-| Fallback try-on if IDM-VTON is queued | **Computer vision** (concatenation diffusion) | **CatVTON** | Space `zhengchong/CatVTON` | [Space demo](https://huggingface.co/spaces/zhengchong/CatVTON) · [Weights](https://huggingface.co/zhengchong/CatVTON) · [Paper](https://arxiv.org/abs/2407.15886) |
-| Last-resort try-on using **mask + text** | **Computer vision** (inpainting) | **SD 2 Inpainting** | `stabilityai/stable-diffusion-2-inpainting` | [Model card](https://huggingface.co/stabilityai/stable-diffusion-2-inpainting) |
+| Primary **virtual try-on** (upper-body garment **image**) | **Computer vision** (conditional diffusion) | **IDM-VTON** | Space `yisol/IDM-VTON` `/tryon` | [Space demo](https://huggingface.co/spaces/yisol/IDM-VTON) · [Weights](https://huggingface.co/yisol/IDM-VTON) · [Paper](https://arxiv.org/abs/2403.05139) · [GitHub](https://github.com/yisol/IDM-VTON) |
+| Fallback try-on (lower/dress + Space queue) | **Computer vision** (concatenation diffusion) | **CatVTON** | Space `zhengchong/CatVTON` `/submit_function` | [Space demo](https://huggingface.co/spaces/zhengchong/CatVTON) · [Weights](https://huggingface.co/zhengchong/CatVTON) · [Paper](https://arxiv.org/abs/2407.15886) |
+| Last-resort try-on using **mask + text**, then paste | **Computer vision** (inpainting / overlay) | **SD 2 Inpainting** + `run_local_overlay` | `stabilityai/stable-diffusion-2-inpainting` via `router.huggingface.co/hf-inference` | [Model card](https://huggingface.co/stabilityai/stable-diffusion-2-inpainting) |
 | **Top-5 similar products** (image or text query) | **CV + NLP** (vision–language embeddings) | **Marqo FashionCLIP** | `Marqo/marqo-fashionCLIP` | [Model card](https://huggingface.co/Marqo/marqo-fashionCLIP) · [Blog](https://www.marqo.ai/blog/search-model-for-fashion) · [GitHub](https://github.com/marqo-ai/marqo-FashionCLIP) |
+| Menswear vs womenswear from the avatar | **CV + NLP** (zero-shot CLIP) | FashionCLIP / CLIP | same encoder | Prompts: “a photograph of a man” vs “a photograph of a woman” |
 | Backup encoder if FashionCLIP fails | **CV + NLP** | **OpenAI CLIP ViT-B/32** | `openai/clip-vit-base-patch32` | [Model card](https://huggingface.co/openai/clip-vit-base-patch32) · [CLIP paper](https://arxiv.org/abs/2103.00020) |
-| Garment caption, stylist copy, explain scores, chat, voice | **NLP** (multimodal LLM) | **Gemini 2.0 Flash** | `gemini-2.0-flash` | [Gemini API](https://ai.google.dev/) · [generateContent](https://ai.google.dev/api/generate-content) · [AI Studio](https://aistudio.google.com/) |
+| Caption, body-tone JSON, chat, **voice STT** | **NLP** (multimodal LLM) | **Gemini 2.0 Flash** | `gemini-2.0-flash` | [Gemini API](https://ai.google.dev/) · [generateContent](https://ai.google.dev/api/generate-content) · [AI Studio](https://aistudio.google.com/) |
 | Open a store listing after retrieval | Search (not a DL model) | **Google Shopping** | `tbm=shop` URL | [How Shopping works](https://support.google.com/googleshopping/answer/9128904) · example `https://www.google.com/search?tbm=shop&q=…` |
 
 ### One-line viva map
@@ -24,13 +25,16 @@ Code: `src/segmentation.py`, `src/tryon.py`, `src/preprocess.py`, `src/confidenc
 | You see in Studio / Catalog / Stylist | Model responsible |
 | --- | --- |
 | Colored **label map** + white clothing **mask** | SegFormer |
-| Person wearing the uploaded garment | IDM-VTON (else CatVTON, else SD2) |
+| Person wearing the uploaded garment | IDM-VTON if **upper**; else CatVTON; else SD2; else local overlay |
 | Bars: seg / CLIP / mask quality / try-on conf | SegFormer softmax + FashionCLIP cosine + mask heuristic |
-| Top-5 tiles + similarity % | FashionCLIP vs `data/embeddings.npy` |
+| Top-5 tiles + similarity % | FashionCLIP vs `data/embeddings.npy` (+ Stylist palette / department) |
 | “Saved to Catalog” shop **Buy** button | Google Shopping URL from the product title |
+| Body tone + recommended color set | Local 12-season LAB + Gemini JSON (`analyze_avatar`) |
+| Shop for Auto / Woman / Man | CLIP audience + Gemini `presentation` + UI override |
 | “Navy cotton crew-neck…” caption | Gemini Vision |
 | Styling advice + result explanation | Gemini Text |
-| Stylist chat / voice note | Gemini Chat + audio transcription |
+| Stylist chat | Gemini Chat (`SYSTEM_CHAT`) or `local_stylist_reply` |
+| Voice note | Gemini STT → **editable** chat text (not auto-send) |
 
 ---
 
@@ -45,12 +49,15 @@ Person photo ──► SegFormer ──► mask, labels, seg_conf
                                       │
 Garment photo ──► Gemini Vision ────────────────────────► garment caption (text)
                                       │
-                 IDM-VTON / CatVTON / SD2 ──► try-on image
+                 IDM-VTON (upper) / CatVTON / SD2 / overlay ──► try-on image
                                       │
                  FashionCLIP image tower ──► vector ─┐
                                                      ├─ cosine Top-5
-Query text / voice ──► Gemini STT ──► text ──►       │
+                                                     │  + palette / avoid / audience (Stylist)
+Query text / voice ──► Gemini STT ──► editable text ─► │
                  FashionCLIP text tower ──► vector ──┘
+                                      │
+Avatar ──► face LAB season + CLIP man/woman + Gemini JSON
                                       │
 Scores + titles ──► Gemini Text ──► advice, explanation, chat
                                       │
@@ -60,8 +67,8 @@ Titles ──► Google Shopping URL
 | Layer | What it is | VESTURE modules |
 | --- | --- | --- |
 | **Computer vision** | Pixels → structure / new pixels | SegFormer, IDM-VTON, CatVTON, SD2, mask dilate/feather, CLIP **image** tower |
-| **NLP** | Language in / language out | Gemini system prompts, captions, advice, chat, JSON avatar profile, audio → transcript |
-| **Vision–language (VLM)** | Shared image–text space | FashionCLIP / CLIP; Gemini multimodal (JPEG + text + audio) |
+| **NLP** | Language in / language out | Gemini system prompts, captions, advice, chat, JSON avatar (`presentation`), audio → transcript |
+| **Vision–language (VLM)** | Shared image–text space | FashionCLIP / CLIP (retrieval + man vs woman); Gemini multimodal (JPEG + text + audio) |
 | **Classical CV (not a neural net)** | Morphology, scoring | `binary_dilation`, Gaussian feather, `mask_quality`, letterbox resize |
 
 ---
@@ -85,10 +92,11 @@ Titles ──► Google Shopping URL
 
 | Technique | Where | Is it fine-tuning? |
 | --- | --- | --- |
-| Load `from_pretrained(...)` / Space `predict` | SegFormer, FashionCLIP, IDM-VTON | **No** — inference only |
+| Load `from_pretrained(...)` / Space APIs | SegFormer, FashionCLIP, IDM-VTON `/tryon`, CatVTON `/submit_function` | **No** — inference only |
 | **System prompts** + few-shot examples | Gemini `GenerateContentConfig.system_instruction` | **No** — prompt adaptation / instruction at inference |
-| Ground Gemini on `seg_conf`, CLIP %, catalog titles | `src/llm_advisor.py` | **No** — retrieval-augmented prompting |
+| Ground Gemini on `seg_conf`, CLIP %, catalog titles, palette, `presentation` | `src/llm_advisor.py`, `src/stylist.py` | **No** — retrieval-augmented prompting |
 | Precompute `embeddings.npy` | Catalog | **No** — index the shop, not the encoder |
+| 12-season LAB + menswear title filter | `src/stylist.py`, `src/recommend.py` | **No** — classical / heuristic ranking |
 | Dilate + feather the mask | `src/segmentation.py` | **No** — classical post-process |
 | Confidence gate 0.85 | `src/confidence.py` | **No** — decision rule |
 
@@ -126,27 +134,36 @@ or recommended catalog titles you are given. Do not invent brands.
 Temperature **0.6**, max tokens **512**, last 8 turns.
 
 ```text
-You are VESTURE, a world-class personal stylist with exceptional high-fashion sense
-and the sharpest outfit-recommendation judgment in luxury retail.
-Think like a creative director: silhouette, color theory, fabric, proportion, occasion,
-and what will actually flatter this client. Recommend with confidence — what to wear,
-why it works, and what to pair. When catalog pieces are listed, rank them and say which
-to try first. When the shopper shares a photo, read the garment, color, and fit before advising.
-When they send a voice note, treat the transcript as their brief.
-If a client profile exists, stay inside that palette and body type.
-If nothing has been analyzed yet, still give precise general advice.
-Reply in 2–6 short sentences. Do not invent brand names. No hashtags. No emoji.
+You are VESTURE, a friendly personal shopper. Talk like a helpful person, not a runway critic.
+Use everyday words: shirt, trousers, jacket, dress — not 'column', 'editorial', 'atelier', or 'silhouette' unless needed.
+Reply in markdown with short lines:
+1) One sentence: what to wear, in plain language.
+2) One sentence: why it suits their colors or body.
+3) If catalog pieces are listed, a numbered list of up to 3, each on its own line:
+   '1. **Title** — short reason'. Do not dump every title into one sentence.
+Keep the whole reply under 90 words. Blank line between the plan and the list.
+If presentation is man/menswear, only men's or unisex pieces — never a women's dress, kurta, skirt, or blouse.
+If presentation is woman/womenswear, skip men's-only pieces.
+Do not open with 'Menswear,' or the season name alone.
+Never tell them to upload an avatar or tap Analyze if a profile is already present.
+No hashtags. No emoji.
 
-Example — shopper: I have a garden wedding and cool undertones.
-You: Stay in jewel and icy tones — emerald, powder blue, true navy.
-A defined-waist midi or a tailored jacket over a fluid skirt will photograph well
-and keep the silhouette formal without feeling costume.
+Example — shopper: What colors suit me? Profile: Soft Summer, dusty rose, sage, taupe, navy.
+You: Your coloring is a cool Soft Summer.
 
-Example — shopper: Casual weekend, pear shape.
-You: Structure the top — a collared shirt or cropped jacket — and keep trousers
-in a continuous dark or mid tone so the hip line stays quiet. Add one leather or
-metal accessory so the look does not read flat.
+**Good on you:** dusty rose, sage, taupe, and soft navy.
+
+**Skip:** hot pink, orange, and stark white.
+Example — shopper: I want to wear for a fashion show. Profile: inverted triangle, Soft Summer, man.
+You: For a show, wear an easy open shirt with straight navy trousers — nothing boxy on the shoulders.
+
+Those Soft Summer colors stay quiet on your skin.
+
+1. **John Players Men Navy Blue Shirt** — open neck, easy shoulder
+2. **Peter England Men Party Blue Jeans** — clean straight line
 ```
+
+If Gemini is down, `local_stylist_reply` uses the same profile (palette, body, `presentation`) and lists up to 3 catalog titles.
 
 ### 4.3 `SYSTEM_AVATAR` — color / body JSON
 
@@ -156,10 +173,15 @@ Temperature **0.3**, max tokens **700**, `response_mime_type = application/json`
 You are VESTURE, a world-class personal stylist with exceptional high-fashion sense
 and the best recommendation judgment in luxury retail. Analyze the person in the photo.
 Be specific and kind. Do not invent brand names. Never comment on attractiveness.
+Set presentation to man or woman from the person in the photo so the catalog can shop
+menswear vs womenswear. Silhouette labels stay geometric.
+Do not default to Light Spring — that season is overused.
 Return JSON only.
 ```
 
-User prompt asks for keys: `color_season`, `undertone`, `palette`, `avoid_colors`, `color_notes`, `body_type`, `body_notes`, `style_direction`, `silhouette_tips`, `occasions`.
+User prompt keys: `color_season` (one of 12 seasons), `undertone` (warm|cool|neutral), `palette` (5 names), `avoid_colors` (3 names), `color_notes`, `body_type` (geometric), **`presentation` (man|woman|unisex)**, `body_notes`, `style_direction`, `silhouette_tips`, `occasions`.
+
+Local merge in `src/stylist.py`: if Gemini returns Light Spring but the LAB season differs, keep the **photo** season. Body copy is capped at 3 sentences. `presentation` can be overridden in the UI (**Shop for**).
 
 ### 4.4 Few-shot garment caption
 
@@ -179,7 +201,7 @@ That sentence becomes IDM-VTON `garment_des` / the SD2 prompt.
 | --- | --- |
 | `style_advice` | Occasion, season, what to pair — given garment text, region, Top-5, `tryon_conf`, `seg_conf` |
 | `explain_result` | 2–3 sentences for a shopper — engine, scores, gate, Top-5; honest if below 0.85 |
-| `transcribe_audio` | “Transcribe this spoken fashion request exactly. Return only the transcript, no quotes.” |
+| `transcribe_audio` | “Transcribe the spoken words in this audio exactly. Return only the transcript, no quotes, no extra commentary.” Returns `(transcript, error)`. MIME sniff (WAV/WebM/OGG/MP4/MPEG); retry Flash models. Rejects clips under 2500 bytes. Needs `GOOGLE_API_KEY`. |
 
 ### 4.6 SD2 prompts (not Gemini) — `src/preprocess.py`
 
@@ -210,17 +232,22 @@ This is what happens when the user taps **Generate Try-On**.
       if seg_conf < 0.85 → show mask only, do not call try-on
 5. Gemini (optional)
       garment JPEG → one-line caption
-6. Try-on cascade
-      IDM-VTON(person, garment, caption)
-        else CatVTON(person, garment, cloth_type)
-        else SD2 inpaint(person, MASK, prompt)   ← mask is required here
-        else cached assets/demo PNG
+6. Try-on cascade (`src/tryon.py`)
+      if region is upper and caption is not pants-like:
+          IDM-VTON /tryon (person, garment, caption)
+      CatVTON /submit_function (ImageEditor + layers[0] mask, cloth_type upper|lower|overall)
+        else /submit_function_flux if that API exists
+        (/predict is not published on the live Space)
+      else SD2 inpaint via router.huggingface.co/hf-inference (person, MASK, prompt)
+      else run_local_overlay (paste garment into mask bbox)
+      else cached assets/demo PNG
 7. Score
       CLIP_sim = cosine(FashionCLIP(garment or mask-crop), FashionCLIP(try-on crop))
       mask_quality from coverage + connectedness
       tryon_conf = 0.4·seg + 0.4·CLIP + 0.2·mask_quality
 8. Recommend
-      FashionCLIP(garment) vs embeddings.npy → Top-5 → Google Shopping URLs
+      Studio: FashionCLIP(garment) vs embeddings.npy → Top-5 → Google Shopping URLs
+      Stylist: same cosine + palette boost + avoid penalty + menswear/womenswear filter
 9. Gemini
       advice + explanation grounded on scores and titles
 ```
@@ -229,7 +256,7 @@ This is what happens when the user taps **Generate Try-On**.
 
 - **Format:** single-channel (`L`) PIL image, same H×W as the person photo.
 - **Convention for SD2:** **white (255) = change this clothing**, **black (0) = keep** face, arms, background.
-- **IDM-VTON / CatVTON:** the Space infers its own clothing region; we still build a mask for the **gate**, **Studio preview**, **mask_quality**, and **CLIP crop**.
+- **IDM-VTON / CatVTON:** the Space infers its own clothing region; we still build a mask for the **gate**, **Studio preview**, **mask_quality**, **CLIP crop**, and CatVTON **`layers[0]`**. Lower masks are waist-clipped so trousers do not replace the torso.
 
 ### 5.3 SegFormer labels (`src/segmentation.py`)
 
@@ -289,14 +316,32 @@ Penalizes empty masks, full-image “everything is clothes”, and speckled junk
 
 ---
 
-## 6. Recommendation + Google Shopping (short)
+## 6. Recommendation + Google Shopping
 
-1. **Dataset ranked:** `data/catalog.csv` (~95 SKUs from DeepFashion / Lamoda-style product stills). Not the full 800k DeepFashion dump.
+1. **Dataset ranked:** `data/catalog.csv` (~95 SKUs from DeepFashion / Lamoda-style product stills). Not the full 800k DeepFashion dump. About **33** titles pass the menswear filter.
 2. **Encoder:** FashionCLIP image/text towers → `data/embeddings.npy`.
-3. **Rank:** cosine similarity, Top-5, highlight ≥ 0.85.
-4. **Buy:** `https://www.google.com/search?tbm=shop&q={title}+buy`
+3. **Studio rank:** cosine similarity, Top-5, highlight ≥ 0.85.
+4. **Stylist rank** (`catalog_for_avatar` / `catalog_for_query` in `src/stylist.py`):
+   - `catalog_audience(title, category)` from `Men` / `Women` keywords; `dress` / `skirt` / `kurta` → woman.
+   - `_audience_ok`: man → man + unisex (drop dresses and kidswear); woman → woman + unisex (drop men's-only).
+   - Palette boost **0.22** (avatar) / **0.35** (chat); `avoid_colors` penalty; department match **+0.05**.
+   - Text queries are enriched with “menswear men's clothing shirt trousers” or “womenswear women's clothing”.
+   - Chat shows **up to 3** titles; the board keeps Top-5.
+5. **Buy:** `https://www.google.com/search?tbm=shop&q={title}+buy+online`
 
-Deep learning chooses **which** item; Google Shopping finds **where to buy** it.
+Deep learning chooses **which** item; Google Shopping finds **where to buy** it. Department is clothing catalog, not an identity lecture.
+
+## 6.1 Stylist analysis + voice (short)
+
+| Step | What runs |
+| --- | --- |
+| Body tone | Face median RGB → LAB 12-season (`src/stylist.py`) |
+| Gemini JSON | `analyze_avatar_llm` + Light Spring override if local season differs |
+| Silhouette | SegFormer shoulder / waist / hip → geometric body type |
+| Department | CLIP man vs woman + dress/skirt prior + **Shop for** override |
+| Voice | Gemini STT with MIME retry → editable `st.text_area` → Send / Discard |
+
+`GOOGLE_API_KEY` from [AI Studio](https://aistudio.google.com/apikey) **is** the Gemini key (`GEMINI_API_KEY` also works). Caption/chat have template fallbacks; **voice does not**.
 
 ---
 
@@ -305,7 +350,7 @@ Deep learning chooses **which** item; Google Shopping finds **where to buy** it.
 | Key | For |
 | --- | --- |
 | `HF_TOKEN` | Spaces + Hub downloads ([token settings](https://huggingface.co/settings/tokens)) |
-| `GOOGLE_API_KEY` | Gemini ([AI Studio](https://aistudio.google.com/)) |
+| `GOOGLE_API_KEY` or `GEMINI_API_KEY` | Gemini caption / JSON / chat / **STT** ([AI Studio](https://aistudio.google.com/apikey) — same key) |
 
 | Dataset | Link | Used by |
 | --- | --- | --- |
@@ -323,10 +368,11 @@ Deep learning chooses **which** item; Google Shopping finds **where to buy** it.
 | File | Role |
 | --- | --- |
 | `src/preprocess.py` | EXIF, letterbox, SD prompts |
-| `src/segmentation.py` | SegFormer, labels, dilate/feather, colorize |
-| `src/tryon.py` | IDM-VTON → CatVTON → SD2 → demo PNG |
+| `src/segmentation.py` | SegFormer, labels, dilate/feather, waist-clipped lower masks |
+| `src/tryon.py` | IDM-VTON (upper) → CatVTON `/submit_function` → SD2 router → overlay |
 | `src/confidence.py` | `mask_quality`, `tryon_conf`, 0.85 gate |
-| `src/recommend.py` | FashionCLIP, cosine Top-5, Shopping URLs |
-| `src/llm_advisor.py` | Gemini prompts + API |
+| `src/recommend.py` | FashionCLIP, cosine Top-5, `catalog_audience`, CLIP man/woman, Shopping URLs |
+| `src/llm_advisor.py` | Gemini prompts, JSON avatar, chat, `transcribe_audio` |
+| `src/stylist.py` | 12-season LAB, `presentation`, `catalog_for_avatar` / `catalog_for_query` |
 | `src/catalog_builder.py` | Catalog images + embeddings |
-| `app.py` | Streamlit Studio / Catalog / Stylist |
+| `app.py` | Streamlit Studio / Catalog / Stylist (editable voice draft, Shop for) |
