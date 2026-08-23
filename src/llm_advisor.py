@@ -20,7 +20,19 @@ _ENV = Path(__file__).resolve().parents[1] / ".env"
 load_dotenv(_ENV, override=True)
 
 DEFAULT_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+GRANITE_MODEL = os.getenv("GRANITE_MODEL", "ibm-granite/granite-4.1-8b")
+GRANITE_URL = os.getenv(
+    "GRANITE_INFERENCE_URL",
+    "https://router.huggingface.co/v1/chat/completions",
+)
 CAPTION_TIMEOUT = 25
+GRANITE_SYSTEM = (
+    "You write short fashion shopping prompts. Return JSON only, no markdown. "
+    "Keys: prompt (one sentence about the garment only), "
+    "dress_query (2-6 words for catalog search), "
+    "garment_category (dress, upper, or lower). "
+    "Do not mention shoes, heels, or footwear. Do not invent brand names."
+)
 
 SYSTEM_STYLIST = (
     "You are VESTURE, a world-class luxury fashion stylist with exceptional high-fashion sense "
@@ -853,4 +865,110 @@ def _parse_json_object(text: str) -> dict:
         blob = match.group(0)
     data = json.loads(blob)
     return data if isinstance(data, dict) else {}
+
+
+_COLOR_WORDS = (
+    "black", "white", "navy", "red", "blue", "green", "pink", "beige", "grey",
+    "gray", "brown", "olive", "cream", "ivory", "yellow", "purple", "gold",
+    "silver", "coral", "burgundy", "khaki", "charcoal", "nude",
+)
+
+
+def _fallback_look_prompt(user_text: str, analysis: Optional[dict] = None) -> dict:
+    """Local prompt if Granite is unreachable. Garment only — no shoes."""
+    analysis = analysis or {}
+    t = (user_text or "").lower()
+    color = next((c for c in _COLOR_WORDS if c in t), "")
+    if not color:
+        palette = analysis.get("palette") or []
+        color = str(palette[0]).split()[0].lower() if palette else "black"
+    if color == "gray":
+        color = "grey"
+    if any(k in t for k in ("jean", "pant", "trouser", "chino")):
+        garment = f"{color} trousers"
+        category = "lower"
+    elif any(k in t for k in ("shirt", "tee", "blouse", "jacket", "hoodie", "blazer")):
+        garment = f"{color} shirt"
+        category = "upper"
+    else:
+        garment = f"{color} dress"
+        category = "dress"
+    prompt = f"{garment}, clean silhouette"
+    return {
+        "prompt": prompt,
+        "dress_query": garment,
+        "garment_category": category,
+        "source": "fallback",
+    }
+
+
+def _normalize_look_payload(data: dict, user_text: str, analysis: Optional[dict]) -> dict:
+    fallback = _fallback_look_prompt(user_text, analysis)
+    prompt = str(data.get("prompt") or fallback["prompt"]).strip()
+    dress_query = str(data.get("dress_query") or fallback["dress_query"]).strip()
+    category = str(data.get("garment_category") or fallback["garment_category"]).strip().lower()
+    if category not in {"dress", "upper", "lower"}:
+        category = fallback["garment_category"]
+    if not prompt or not dress_query:
+        return fallback
+    return {
+        "prompt": prompt,
+        "dress_query": dress_query,
+        "garment_category": category,
+        "source": str(data.get("source") or "granite"),
+    }
+
+
+def granite_look_prompt(user_text: str, analysis: Optional[dict] = None) -> dict:
+    """IBM Granite 4.1-8B writes a try-on / shopping prompt. Falls back locally."""
+    analysis = analysis or {}
+    fallback = _fallback_look_prompt(user_text, analysis)
+    from .hf_auth import ensure_hf_login, hf_token
+
+    ensure_hf_login()
+    token = hf_token()
+    if not token:
+        return fallback
+
+    palette = ", ".join(str(c) for c in (analysis.get("palette") or [])[:5])
+    user = (
+        f"Shopper request: {user_text}\n"
+        f"Color season: {analysis.get('color_season') or 'n/a'}. "
+        f"Palette: {palette or 'n/a'}. "
+        f"Department: {analysis.get('presentation') or 'n/a'}.\n"
+        "Write JSON for a matching garment only. Do not mention shoes."
+    )
+    try:
+        import requests
+
+        resp = requests.post(
+            GRANITE_URL,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": GRANITE_MODEL,
+                "messages": [
+                    {"role": "system", "content": GRANITE_SYSTEM},
+                    {"role": "user", "content": user},
+                ],
+                "max_tokens": 180,
+                "temperature": 0.3,
+            },
+            timeout=45,
+        )
+        resp.raise_for_status()
+        payload = resp.json()
+        text = (
+            (((payload.get("choices") or [{}])[0].get("message") or {}).get("content"))
+            or payload.get("generated_text")
+            or ""
+        )
+        data = _parse_json_object(str(text))
+        if data:
+            return _normalize_look_payload(data, user_text, analysis)
+    except Exception as exc:
+        print(f"Granite look prompt failed ({exc}). Using local fallback.")
+    return fallback
 

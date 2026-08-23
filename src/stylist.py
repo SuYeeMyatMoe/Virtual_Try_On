@@ -464,19 +464,22 @@ def catalog_for_query(
     k: int = 5,
     exclude_ids: Optional[Sequence] = None,
     image: Optional[Image.Image] = None,
+    categories: Optional[Sequence[str]] = None,
 ) -> list[dict]:
     analysis = analysis or {}
     palette = ", ".join(str(c) for c in (analysis.get("palette") or [])[:5])
     season = str(analysis.get("color_season") or "")
     body = str(analysis.get("body_type") or "")
     audience = _audience_from(analysis, image)
-    dept = (
-        "menswear men's clothing shirt trousers"
-        if audience == "man"
-        else "womenswear women's clothing"
-        if audience == "woman"
-        else ""
-    )
+    cats = {str(c).strip().lower() for c in (categories or []) if str(c).strip()}
+    if cats == {"shoes"}:
+        dept = "footwear shoes heels"
+    elif audience == "man":
+        dept = "menswear men's clothing shirt trousers"
+    elif audience == "woman":
+        dept = "womenswear women's clothing"
+    else:
+        dept = ""
     enriched = " ".join(p for p in (query, dept, season, body, palette) if p).strip()
     return recommend_from_text(
         enriched,
@@ -486,6 +489,7 @@ def catalog_for_query(
         color_weight=0.35,
         avoid_colors=_avoid_hints(analysis),
         audience=audience,
+        categories=categories,
     )
 
 
@@ -530,7 +534,7 @@ def interpret_chat(text: str, recs: Sequence[dict]) -> dict[str, Any]:
     )
     if wants_colors:
         return {"action": "colors"}
-    wants_recs = any(
+    wants_look = any(
         p in t
         for p in (
             "recommend",
@@ -542,7 +546,10 @@ def interpret_chat(text: str, recs: Sequence[dict]) -> dict[str, Any]:
             "fashion show",
             "runway",
             "wear for",
-            "i want to wear",
+            "i want",
+            "i need",
+            "black dress",
+            "dress",
             "wedding",
             "weekend",
             "interview",
@@ -552,8 +559,8 @@ def interpret_chat(text: str, recs: Sequence[dict]) -> dict[str, Any]:
             "date night",
         )
     )
-    if wants_recs:
-        return {"action": "query", "query": text}
+    if wants_look:
+        return {"action": "look", "query": text}
     return {"action": "chat"}
 
 

@@ -31,6 +31,9 @@ REGION_ALIASES = {
     "overall": "dress",
     "full": "dress",
     "gown": "dress",
+    "shoes": "lower",
+    "shoe": "lower",
+    "heels": "lower",
 }
 
 

@@ -18,6 +18,7 @@ Full write-up: [`overview.md`](overview.md) · model map: [`MODELS.md`](MODELS.m
 - Stylist AI **Analyze:** 12-season body tone, palette, silhouette, **Shop for** Auto / Woman / Man
 - Catalog looks filtered by **menswear / womenswear**, palette boost, and avoid-colors
 - Chat stays empty until you type; markdown replies; up to 3 catalog titles
+- Look requests (e.g. “I want a black dress”) use **IBM Granite 4.1-8B** (`HF_TOKEN`) to write a shopping prompt, then FashionCLIP shows **dress** tiles. Gemini stays for other chat, Analyze, voice, and captions.
 - Voice: Gemini STT → **editable** text → Send / Discard (does not auto-send)
 - **Download analysis PDF** after Analyze: season, body tone, body type, color set, silhouette (no catalog list)
 - Gemini garment caption, advice, and result explanation (template fallback if no key)
@@ -33,6 +34,7 @@ Full write-up: [`overview.md`](overview.md) · model map: [`MODELS.md`](MODELS.m
 | Local overlay | `run_local_overlay` in `src/tryon.py` | Local CPU |
 | Marqo FashionCLIP | `Marqo/marqo-fashionCLIP` | Local CPU |
 | Gemini 2.0 Flash | Google Generative AI API | Cloud API |
+| IBM Granite 4.1-8B (look prompts) | `ibm-granite/granite-4.1-8b` via `router.huggingface.co` | HF Inference (`HF_TOKEN`) |
 
 Fallback for recommendations: `openai/clip-vit-base-patch32`.
 

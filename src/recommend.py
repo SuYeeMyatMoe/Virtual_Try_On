@@ -157,6 +157,11 @@ def catalog_audience(title: str, category: str = "") -> str:
         return "man"
     if str(category or "").strip().lower() == "dress" or _WOMAN_GARMENT_RE.search(str(title or "")):
         return "woman"
+    cat = str(category or "").strip().lower()
+    if cat in {"shoes", "shoe"} and re.search(
+        r"\b(heel|heels|pump|stiletto|sandal|mule)\b", str(title or ""), re.I
+    ):
+        return "woman"
     return "unisex"
 
 
@@ -304,9 +309,11 @@ def _rank_catalog(
     color_weight: float = 0.08,
     avoid_colors: Optional[Sequence[str]] = None,
     audience: Optional[str] = None,
+    categories: Optional[Sequence[str]] = None,
 ) -> List[Dict[str, Any]]:
     scores = sims.copy()
     want = str(audience or "").strip().lower()
+    allow_cats = {str(c).strip().lower() for c in (categories or []) if str(c).strip()}
     if color_hints:
         for i, row in df.iterrows():
             scores[int(i)] = float(scores[int(i)]) + _color_boost(
@@ -335,6 +342,8 @@ def _rank_catalog(
             continue
         if not _audience_ok(str(row.get("title", "")), str(row.get("category", "")), want):
             continue
+        if allow_cats and str(row.get("category", "")).strip().lower() not in allow_cats:
+            continue
         sim = float(scores[int(idx)])
         if float(sims[int(idx)]) < min_sim:
             continue
@@ -359,6 +368,7 @@ def recommend_top_k(
     color_weight: float = 0.08,
     avoid_colors: Optional[Sequence[str]] = None,
     audience: Optional[str] = None,
+    categories: Optional[Sequence[str]] = None,
 ) -> List[Dict[str, Any]]:
     """Return Top-k catalog items with cosine similarity confidence."""
     df, emb = load_catalog(csv_path, emb_path)
@@ -378,6 +388,7 @@ def recommend_top_k(
         color_weight,
         avoid_colors,
         audience=audience,
+        categories=categories,
     )
 
 
@@ -391,10 +402,12 @@ def recommend_from_text(
     color_weight: float = 0.25,
     avoid_colors: Optional[Sequence[str]] = None,
     audience: Optional[str] = None,
+    categories: Optional[Sequence[str]] = None,
 ) -> List[Dict[str, Any]]:
     """Rank catalog items from a natural-language style request."""
     df, emb = load_catalog(csv_path, emb_path)
     emb = ensure_embeddings(df, emb, emb_path)
+    allow_cats = {str(c).strip().lower() for c in (categories or []) if str(c).strip()}
     q = embed_text(query)
     if q is not None:
         q = q / (np.linalg.norm(q) + 1e-8)
@@ -410,6 +423,7 @@ def recommend_from_text(
             color_weight,
             avoid_colors,
             audience=audience,
+            categories=categories,
         )
 
     skip = {str(x) for x in (exclude_ids or [])}
@@ -418,6 +432,8 @@ def recommend_from_text(
     for i, row in df.iterrows():
         item_id = str(row.get("id", i))
         if item_id in skip:
+            continue
+        if allow_cats and str(row.get("category", "")).strip().lower() not in allow_cats:
             continue
         if not _audience_ok(str(row.get("title", "")), str(row.get("category", "")), audience):
             continue

@@ -21,7 +21,7 @@ from PIL import Image
 
 from src.confidence import DEFAULT_GATE, evaluate_segmentation_gate, summarize_scores
 from src.hf_auth import ensure_hf_login
-from src.llm_advisor import caption_garment, explain_result, style_advice
+from src.llm_advisor import caption_garment, explain_result, granite_look_prompt, style_advice
 from src.preprocess import load_rgb, preprocess_garment, preprocess_person, quality_check, normalize_garment_region
 from src.recommend import clip_similarity, crop_by_mask, recommend_top_k
 from src.segmentation import colorize_labels, infer_garment_category, segment_clothing
@@ -1427,6 +1427,9 @@ def _init_stylist_state() -> None:
     st.session_state.setdefault("stylist_color_board", None)
     st.session_state.setdefault("stylist_body_board", None)
     st.session_state.setdefault("stylist_board_presentation", None)
+    st.session_state.setdefault("stylist_dress_recs", [])
+    st.session_state.setdefault("stylist_shoe_recs", [])
+    st.session_state.setdefault("stylist_granite_prompt", "")
     _drop_stylist_auto_intro()
 
 
@@ -1772,6 +1775,9 @@ def _handle_stylist_prompt(
             except Exception:
                 pass
 
+    granite_look: dict | None = None
+    dress_recs: list = []
+
     if intent["action"] == "more" and search_image is not None:
         try:
             new_recs = _stylist_more(search_image, analysis)
@@ -1779,29 +1785,42 @@ def _handle_stylist_prompt(
             new_recs = []
     elif intent["action"] == "studio":
         studio_item = intent.get("item")
-    elif intent["action"] == "query":
+    elif intent["action"] in {"look", "query"}:
+        look_text = str(intent.get("query") or prompt)
+        with st.spinner("Loading IBM Granite 4.1-8B…"):
+            granite_look = granite_look_prompt(look_text, analysis)
+        dress_q = str((granite_look or {}).get("dress_query") or look_text)
+        garment_cat = str((granite_look or {}).get("garment_category") or "dress")
+        if garment_cat not in {"dress", "upper", "lower"}:
+            garment_cat = "dress"
+        shown = st.session_state.get("stylist_shown_ids") or []
         try:
-            new_recs = catalog_for_query(
-                intent.get("query") or prompt,
+            dress_recs = catalog_for_query(
+                dress_q,
                 analysis,
-                k=5,
-                exclude_ids=st.session_state.get("stylist_shown_ids") or [],
+                k=3,
+                exclude_ids=shown,
                 image=search_image,
+                categories=[garment_cat],
             )
         except Exception:
-            new_recs = []
-        if not new_recs and search_image is not None:
+            dress_recs = []
+        if not dress_recs and search_image is not None:
             try:
-                new_recs = catalog_for_avatar(
+                dress_recs = catalog_for_avatar(
                     search_image,
                     analysis,
-                    k=5,
-                    exclude_ids=st.session_state.get("stylist_shown_ids") or [],
+                    k=3,
+                    exclude_ids=shown,
                 )
             except Exception:
-                new_recs = []
+                dress_recs = []
+        new_recs = list(dress_recs)
         if new_recs:
             _remember_recs(new_recs)
+        st.session_state["stylist_dress_recs"] = dress_recs
+        st.session_state["stylist_shoe_recs"] = []
+        st.session_state["stylist_granite_prompt"] = str((granite_look or {}).get("prompt") or "")
     elif images and search_image is not None and not recs:
         try:
             new_recs = catalog_for_avatar(
@@ -1829,7 +1848,18 @@ def _handle_stylist_prompt(
     )
     if intent["action"] == "studio" and studio_item is not None:
         reply = f"{reply}\n\nOpening Studio with {studio_item['title']}."
-    messages.append({"role": "assistant", "content": reply, "recs": new_recs, "used_gemini": used})
+    messages.append(
+        {
+            "role": "assistant",
+            "content": reply,
+            "recs": new_recs,
+            "dress_recs": dress_recs,
+            "shoe_recs": [],
+            "granite_prompt": str((granite_look or {}).get("prompt") or ""),
+            "used_gemini": used,
+            "used_granite": bool(granite_look and granite_look.get("source") == "granite"),
+        }
+    )
     if studio_item is not None:
         _go_studio_with_garment(
             ROOT / studio_item["image_path"],
@@ -1909,6 +1939,9 @@ def stylist_tab():
         st.session_state["stylist_all_recs"] = []
         _remember_recs(recs)
         st.session_state["stylist_messages"] = []
+        st.session_state["stylist_dress_recs"] = []
+        st.session_state["stylist_shoe_recs"] = []
+        st.session_state["stylist_granite_prompt"] = ""
 
     analysis = st.session_state.get("stylist_analysis")
     if analysis and avatar is not None:
@@ -2014,7 +2047,16 @@ def stylist_tab():
             "Try these looks",
             "Catalog pieces ranked to your avatar, clothing department, body type, and color set. Send any piece to Studio.",
         )
-        _render_stylist_looks(st.session_state.get("stylist_recs") or [], key_prefix="sty_try")
+        granite_board = str(st.session_state.get("stylist_granite_prompt") or "").strip()
+        dress_board = st.session_state.get("stylist_dress_recs") or []
+        if granite_board:
+            with st.expander("Granite prompt", expanded=True):
+                st.write(granite_board)
+        if dress_board:
+            st.markdown("**Dress**")
+            _render_stylist_looks(dress_board, key_prefix="sty_dress")
+        else:
+            _render_stylist_looks(st.session_state.get("stylist_recs") or [], key_prefix="sty_try")
         more_col, studio_col = st.columns(2)
         with more_col:
             if st.button("More recommendations", type="secondary", width="stretch"):
@@ -2086,8 +2128,16 @@ def stylist_tab():
                     st.markdown(body)
                 else:
                     st.write(body)
+                granite_prompt = str(msg.get("granite_prompt") or "").strip()
+                if granite_prompt:
+                    with st.expander("Granite prompt", expanded=True):
+                        st.write(granite_prompt)
+                dress_extra = msg.get("dress_recs") or []
+                if dress_extra:
+                    st.markdown("**Dress**")
+                    _render_stylist_looks(dress_extra, key_prefix=f"chat_{i}_dress")
                 extra = msg.get("recs") or []
-                if extra:
+                if extra and not dress_extra:
                     _render_stylist_looks(extra, key_prefix=f"chat_{i}")
 
         if st.session_state.get("stylist_voice_error"):
@@ -2133,6 +2183,7 @@ def stylist_tab():
                 "Try asking",
                 [
                     "What colors suit me?",
+                    "I want a black dress",
                     "I want to wear for a fashion show",
                     "Casual weekend outfits",
                     "Give me more recommendations",

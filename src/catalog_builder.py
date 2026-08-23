@@ -70,6 +70,18 @@ CATALOG_SPEC: List[Tuple[str, str, str, Tuple[int, int, int]]] = [
     ("ivory_lace", "Ivory Lace Dress", "dress", (255, 255, 240)),
 ]
 
+SHOE_SPEC: List[Tuple[str, str, str, Tuple[int, int, int]]] = [
+    ("black_heels", "Women Black Pointed Heels", "black", (20, 20, 20)),
+    ("nude_pumps", "Women Nude Court Pumps", "beige", (196, 176, 148)),
+    ("white_sneakers", "White Low-Top Sneakers", "white", (245, 245, 245)),
+    ("black_boots", "Women Black Ankle Boots", "black", (25, 25, 25)),
+    ("navy_flats", "Navy Ballet Flats", "navy", (25, 40, 90)),
+    ("gold_sandals", "Gold Evening Sandals", "gold", (196, 165, 80)),
+    ("brown_loafers", "Brown Leather Loafers", "brown", (121, 85, 61)),
+    ("red_heels", "Women Red Stiletto Heels", "red", (178, 34, 52)),
+]
+SHOE_KEEP = ("shoe", "heel", "sandal", "boot", "sneaker", "pump", "loafer", "flat", "footwear")
+
 
 def _font(size: int = 28):
     try:
@@ -119,6 +131,40 @@ def make_garment_image(
     label = title if len(title) < 34 else title[:31] + "..."
     draw.text((40, h - 70), label, fill=(40, 40, 45), font=font)
     draw.text((40, h - 42), category.upper(), fill=(110, 110, 120), font=_font(16))
+    return img
+
+
+def make_shoe_image(
+    title: str,
+    color: Tuple[int, int, int],
+    size: Tuple[int, int] = (512, 640),
+) -> Image.Image:
+    """Simple product-style shoe still for offline catalog tiles."""
+    w, h = size
+    img = Image.new("RGB", (w, h), (250, 250, 252))
+    draw = ImageDraw.Draw(img)
+    draw.rounded_rectangle((50, 70, w - 50, h - 100), radius=28, fill=(236, 236, 240))
+    cx, cy = w // 2, h // 2 + 20
+    sole = tuple(max(0, c - 30) for c in color)
+    draw.polygon(
+        [
+            (cx - 170, cy + 20),
+            (cx + 150, cy - 10),
+            (cx + 175, cy + 35),
+            (cx + 40, cy + 70),
+            (cx - 150, cy + 55),
+        ],
+        fill=color,
+    )
+    draw.ellipse((cx - 40, cy - 90, cx + 90, cy + 20), fill=color)
+    draw.polygon(
+        [(cx + 130, cy + 20), (cx + 175, cy + 35), (cx + 155, cy + 95), (cx + 120, cy + 55)],
+        fill=sole,
+    )
+    font = _font(20)
+    label = title if len(title) < 34 else title[:31] + "..."
+    draw.text((40, h - 70), label, fill=(40, 40, 45), font=font)
+    draw.text((40, h - 42), "SHOES", fill=(110, 110, 120), font=_font(16))
     return img
 
 
@@ -344,7 +390,7 @@ def _save_catalog_jpeg(img: Image.Image, path: Path) -> bool:
 
 
 def _existing_editorial_rows() -> List[dict]:
-    """Keep VE* lookbook rows already in catalog.csv."""
+    """Keep VE* lookbook rows and SH* shoes already in catalog.csv."""
     if not CSV_PATH.exists():
         return []
     import pandas as pd
@@ -352,7 +398,7 @@ def _existing_editorial_rows() -> List[dict]:
     df = pd.read_csv(CSV_PATH)
     if "id" not in df.columns:
         return []
-    keep = df[df["id"].astype(str).str.startswith("VE")]
+    keep = df[df["id"].astype(str).str.startswith(("VE", "SH"))]
     return keep.to_dict("records")
 
 
@@ -488,6 +534,8 @@ def _collect_from_streaming(per_cat: int) -> Tuple[List[Tuple[str, str, Image.Im
 def _write_collected_items(collected: List[Tuple[str, str, Image.Image, str]]) -> Path:
     IMAGES_DIR.mkdir(parents=True, exist_ok=True)
     for stale in IMAGES_DIR.glob("df_*.jpg"):
+        if "shoes" in stale.name:
+            continue
         stale.unlink(missing_ok=True)
     editorial = _existing_editorial_rows()
     rows = list(editorial)
@@ -511,6 +559,119 @@ def _write_collected_items(collected: List[Tuple[str, str, Image.Image, str]]) -
             }
         )
     return _write_catalog_rows(rows)
+
+
+def _is_shoe_row(row: dict, title: str) -> bool:
+    blob = f"{_row_blob(row)} {title}".lower()
+    master = str(row.get("master_category") or row.get("masterCategory") or "").lower()
+    if master == "footwear":
+        return True
+    return any(k in blob for k in SHOE_KEEP)
+
+
+def _collect_shoes(n: int) -> List[Tuple[str, str, Image.Image, str]]:
+    found: List[Tuple[str, str, Image.Image, str]] = []
+    try:
+        print(f"Fetching shoe stills from {HIRES_DATASET}…")
+        for row in _iter_viewer_rows(HIRES_DATASET, max_rows=6000):
+            if len(found) >= n:
+                break
+            title = _row_text(row) or "Fashion shoes"
+            if not _is_shoe_row(row, title):
+                continue
+            if not _image_meets_min_size(row):
+                continue
+            img = _row_image(row)
+            if img is None or min(img.size) < MIN_IMAGE_SIDE:
+                continue
+            found.append((title, "shoes", img, _row_color(row, title)))
+            print(f"  + shoes {img.size[0]}x{img.size[1]}  {title[:60]}")
+    except Exception as exc:
+        print(f"Shoe download failed ({exc}). Using placeholder shoes.")
+    return found
+
+
+def _placeholder_shoes(n: int) -> List[dict]:
+    rows = []
+    for i, (slug, title, color_name, rgb) in enumerate(SHOE_SPEC[: max(1, min(n, len(SHOE_SPEC)))], start=1):
+        rel = f"data/catalog/images/df_shoes_{i:03d}.jpg"
+        out = ROOT / rel
+        make_shoe_image(title, rgb).convert("RGB").save(out, format="JPEG", quality=JPEG_QUALITY)
+        rows.append(
+            {
+                "id": f"SH{i:03d}",
+                "title": title,
+                "category": "shoes",
+                "color": color_name,
+                "image_path": rel,
+                "shop_url": f"https://www.google.com/search?tbm=shop&q={quote_plus(title + ' buy')}",
+            }
+        )
+    return rows
+
+
+def _append_embeddings_for_new_rows() -> None:
+    """Embed only rows added after the current embeddings.npy."""
+    import pandas as pd
+
+    if not CSV_PATH.exists():
+        return
+    df = pd.read_csv(CSV_PATH)
+    if EMB_PATH.exists():
+        existing = np.load(EMB_PATH)
+        if len(existing) == len(df):
+            print(f"Embeddings already match {len(df)} catalog rows.")
+            return
+        if 0 < len(existing) < len(df):
+            from .recommend import embed_image
+
+            extra = []
+            for i in range(len(existing), len(df)):
+                path = ROOT / str(df.iloc[i]["image_path"])
+                extra.append(embed_image(Image.open(path).convert("RGB")))
+                print(f"Embedded: {df.iloc[i]['title']}")
+            arr = np.vstack([existing, np.stack(extra, axis=0).astype(np.float32)])
+            norms = np.linalg.norm(arr, axis=1, keepdims=True) + 1e-8
+            arr = arr / norms
+            np.save(EMB_PATH, arr)
+            print(f"Saved embeddings {arr.shape} -> {EMB_PATH}")
+            return
+    build_embeddings()
+
+
+def add_shoes(n: int = 8) -> Path:
+    """Append a small shoe set (SH*) without rebuilding apparel rows."""
+    IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+    import pandas as pd
+
+    existing: List[dict] = []
+    if CSV_PATH.exists():
+        existing = pd.read_csv(CSV_PATH).to_dict("records")
+        existing = [r for r in existing if not str(r.get("id", "")).startswith("SH")]
+
+    collected = _collect_shoes(n) if n > 0 else []
+    rows = list(existing)
+    if collected:
+        for i, (title, _cat, img, color_name) in enumerate(collected[:n], start=1):
+            rel = f"data/catalog/images/df_shoes_{i:03d}.jpg"
+            out = ROOT / rel
+            if not _save_catalog_jpeg(img, out):
+                continue
+            rows.append(
+                {
+                    "id": f"SH{i:03d}",
+                    "title": title[:80],
+                    "category": "shoes",
+                    "color": color_name,
+                    "image_path": rel,
+                    "shop_url": f"https://www.google.com/search?tbm=shop&q={quote_plus(title + ' buy')}",
+                }
+            )
+    if sum(1 for r in rows if str(r.get("id", "")).startswith("SH")) < 1:
+        rows.extend(_placeholder_shoes(n))
+    path = _write_catalog_rows(rows)
+    print(f"Catalog now has {sum(1 for r in rows if str(r.get('id','')).startswith('SH'))} shoe SKUs.")
+    return path
 
 
 def build_catalog_from_deepfashion(n: int = 90) -> Path:
@@ -560,7 +721,17 @@ def main():
         action="store_true",
         help="Only generate images/CSV (skip CLIP download)",
     )
+    parser.add_argument(
+        "--add-shoes",
+        action="store_true",
+        help="Append a small SH* shoe set without rebuilding apparel",
+    )
     args = parser.parse_args()
+    if args.add_shoes:
+        add_shoes(min(args.n, 8) if args.n else 8)
+        if not args.skip_embeddings:
+            _append_embeddings_for_new_rows()
+        return
     if args.placeholders:
         build_catalog(min(args.n, len(CATALOG_SPEC)))
     elif args.from_deepfashion or args.n > len(CATALOG_SPEC):
