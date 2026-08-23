@@ -134,6 +134,33 @@ def _select_region(pred: np.ndarray, category: str) -> np.ndarray:
     return selected
 
 
+def hair_mask(
+    image: Image.Image,
+    label_map: np.ndarray | None = None,
+    dilate_iter: int = 2,
+    feather_sigma: float = 1.2,
+) -> Tuple[Image.Image, np.ndarray]:
+    """Binary hair mask from SegFormer class 2. Face stays out of the white region."""
+    pred = label_map if label_map is not None else _predict_labels(image)[0]
+    if pred.shape[:2] != (image.size[1], image.size[0]):
+        pred = np.array(
+            Image.fromarray(pred.astype(np.uint8), mode="L").resize(
+                image.size, Image.Resampling.NEAREST
+            ),
+            dtype=np.int32,
+        )
+    selected = pred == 2
+    # Keep dye/style off face, arms, and clothing so the shirt color cannot leak in.
+    selected[np.isin(pred, [4, 5, 6, 7, 11, 14, 15])] = False
+    if dilate_iter <= 0:
+        eroded = ndimage.binary_erosion(selected, iterations=1)
+        if eroded.any():
+            selected = eroded
+    soft = _dilate_feather(selected.astype(np.float32), dilate_iter=dilate_iter, sigma=feather_sigma)
+    mask_img = Image.fromarray((soft * 255).astype(np.uint8), mode="L")
+    return mask_img, pred
+
+
 def infer_garment_category(image: Image.Image) -> str | None:
     """Guess upper / lower / dress from a garment photo (pants vs shirt vs dress)."""
     pred, _ = _predict_labels(image)

@@ -14,7 +14,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from PIL import Image
 
-from .preprocess import normalize_garment_region
+from .preprocess import normalize_color_name, normalize_garment_region
 
 _ENV = Path(__file__).resolve().parents[1] / ".env"
 load_dotenv(_ENV, override=True)
@@ -287,7 +287,8 @@ def caption_garment(
 
     Returns (caption, used_gemini).
     """
-    fallback = _template_caption(category, color, style)
+    named = normalize_color_name(color)
+    fallback = _template_caption(category, named, style)
     if image is None or not has_gemini():
         return fallback, False
     region = normalize_garment_region(category)
@@ -299,15 +300,24 @@ def caption_garment(
         "dress": "This is a DRESS. Do not describe it as a separate top.",
         "upper": "This is an UPPER-BODY garment (shirt, blouse, jacket, or knit).",
     }.get(region, "")
+    color_lock = ""
+    if named:
+        color_lock = (
+            f"The shopper requires this garment to be {named}. "
+            "Ignore the photo color and describe it as that color."
+        )
     prompt = (
         f"{FEW_SHOT_CAPTION}\n"
         "Describe this garment in one sentence for a virtual try-on model. "
         "Include color, fabric, silhouette, and garment type. "
-        f"Category hint: {region}. {region_lock}"
+        f"Category hint: {region}. {region_lock} {color_lock}"
     )
     try:
         text = _generate_text(prompt, image=image)
-        return text.split("\n")[0].strip().strip('"'), True
+        line = text.split("\n")[0].strip().strip('"')
+        if named and named not in line.lower():
+            line = f"a {named} {line.lstrip('a ').lstrip('an ')}"
+        return line, True
     except Exception:
         return fallback, False
 

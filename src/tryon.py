@@ -20,7 +20,13 @@ from dotenv import load_dotenv
 from PIL import Image
 
 from .hf_auth import ensure_hf_login, hf_token
-from .preprocess import build_garment_prompt, negative_prompt, normalize_garment_region
+from .preprocess import (
+    build_garment_prompt,
+    negative_prompt,
+    normalize_color_name,
+    normalize_garment_region,
+    recolor_hair,
+)
 
 load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=True)
 
@@ -30,6 +36,7 @@ DEFAULT_MODEL = os.getenv(
 )
 IDM_SPACE = os.getenv("VTON_SPACE", "yisol/IDM-VTON")
 CATVTON_SPACE = os.getenv("CATVTON_SPACE", "zhengchong/CatVTON")
+INPAINT_SPACE = os.getenv("INPAINT_SPACE", "diffusers/stable-diffusion-xl-inpainting")
 # api-inference.huggingface.co was decommissioned; Inference Providers live here.
 API_URL_TMPL = os.getenv(
     "HF_INFERENCE_URL",
@@ -402,6 +409,52 @@ def run_inpainting(
     raise RuntimeError(f"Inpainting failed after retries: {last_err}")
 
 
+def run_inpaint_space(
+    person: Image.Image,
+    mask: Image.Image,
+    prompt: str,
+    timeout: int = 180,
+) -> Image.Image:
+    """Mask inpaint via a Hugging Face Space (works when Inference Providers are 403)."""
+    if mask.mode != "L":
+        mask = mask.convert("L")
+    if person.mode != "RGB":
+        person = person.convert("RGB")
+    if person.size != mask.size:
+        mask = mask.resize(person.size, Image.Resampling.NEAREST)
+
+    client = _space_client(INPAINT_SPACE, timeout=timeout)
+    errors: list[str] = []
+    with tempfile.TemporaryDirectory(prefix="vesture_hair_") as tmp:
+        tmp_path = Path(tmp)
+        img_f = _gradio_file(_save_temp_png(person, tmp_path, "person.png"))
+        layer_rgba = Image.merge("RGBA", (mask, mask, mask, mask))
+        layer_f = _gradio_file(_save_temp_png(layer_rgba, tmp_path, "layer.png"))
+        mask_rgb = Image.merge("RGB", (mask, mask, mask))
+        mask_f = _gradio_file(_save_temp_png(mask_rgb, tmp_path, "mask.png"))
+        editor = _editor_payload(img_f, layer_f)
+        neg = negative_prompt()
+        attempts = (
+            lambda: client.predict(
+                editor, prompt, neg, 7.5, 20, 0.85, "EulerDiscreteScheduler", api_name="/predict"
+            ),
+            lambda: client.predict(img_f, prompt, neg, 7.5, 20, 0.85, "EulerDiscreteScheduler", api_name="/predict"),
+            lambda: client.predict(img_f, mask_f, prompt, api_name="/predict"),
+            lambda: client.predict(img_f, mask_f, prompt, api_name="/inpaint"),
+        )
+        for call in attempts:
+            try:
+                img = _as_pil(call())
+                if img is not None:
+                    if img.size != person.size:
+                        img = img.resize(person.size, Image.Resampling.LANCZOS)
+                    return img
+                errors.append("Space returned no image")
+            except Exception as exc:
+                errors.append(str(exc)[:180])
+    raise RuntimeError(" | ".join(errors) or f"{INPAINT_SPACE} returned no image")
+
+
 def run_local_overlay(
     person: Image.Image,
     garment: Image.Image,
@@ -421,6 +474,31 @@ def run_local_overlay(
     region = person_rgb.copy()
     region.paste(fitted, (x0, y0))
     return Image.composite(region, person_rgb, mask_l)
+
+
+def apply_hair_color(
+    person: Image.Image,
+    hair_color: str,
+    label_map=None,
+) -> Tuple[Image.Image, Optional[str]]:
+    """Dye only the SegFormer hair region after clothing try-on."""
+    named = normalize_color_name(hair_color)
+    if not named:
+        return person, None
+    import importlib
+
+    import src.segmentation as _seg
+
+    importlib.reload(_seg)
+    hair_mask = getattr(_seg, "hair_mask", None)
+    if hair_mask is None:
+        return person, "Hair color skipped — hair mask helper is not loaded. Restart Streamlit."
+
+    mask, _pred = hair_mask(person, label_map=label_map, dilate_iter=1, feather_sigma=2.4)
+    if mask.getbbox() is None:
+        return person, "Hair color skipped — no hair region found."
+    dyed = recolor_hair(person, mask, named)
+    return dyed, None
 
 
 def try_on(
@@ -465,8 +543,9 @@ def try_on_vton(
 
     Returns: (result_image or None, warning_or_error or None, prompt_used, engine)
     """
-    prompt = extra_prompt or build_garment_prompt(
-        category, color=color, style=style, extra=extra_prompt
+    named = normalize_color_name(color)
+    prompt = build_garment_prompt(
+        category, color=named, extra=extra_prompt
     )
     category = normalize_garment_region(category)
     cloth_type = _cloth_type(category)

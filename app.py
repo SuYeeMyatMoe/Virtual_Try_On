@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import base64
 import html
+import importlib
 import io
 from datetime import datetime
 from pathlib import Path
@@ -19,10 +20,26 @@ import streamlit as st
 from dotenv import load_dotenv
 from PIL import Image
 
+import src.preprocess as _preprocess
+import src.segmentation as _segmentation
+import src.tryon as _tryon
+
+importlib.reload(_preprocess)
+importlib.reload(_segmentation)
+importlib.reload(_tryon)
+
 from src.confidence import DEFAULT_GATE, evaluate_segmentation_gate, summarize_scores
 from src.hf_auth import ensure_hf_login
 from src.llm_advisor import caption_garment, explain_result, granite_look_prompt, style_advice
-from src.preprocess import load_rgb, preprocess_garment, preprocess_person, quality_check, normalize_garment_region
+from src.preprocess import (
+    load_rgb,
+    normalize_color_name,
+    normalize_garment_region,
+    preprocess_garment,
+    preprocess_person,
+    quality_check,
+    tint_garment,
+)
 from src.recommend import clip_similarity, crop_by_mask, recommend_top_k
 from src.segmentation import colorize_labels, infer_garment_category, segment_clothing
 from src.stylist import (
@@ -37,7 +54,7 @@ from src.stylist import (
     resolve_presentation,
     swatch_hex,
 )
-from src.tryon import list_demo_pairs, try_on_vton
+from src.tryon import apply_hair_color, list_demo_pairs, try_on_vton
 
 ROOT = Path(__file__).resolve().parent
 load_dotenv(ROOT / ".env", override=True)
@@ -1014,9 +1031,29 @@ def tryon_tab():
             )
             st.caption("Lower keeps pants on the legs — not as a top.")
         with o2:
-            color = st.text_input("Color (optional)", placeholder="e.g. navy blue")
+            color = st.text_input("Color (optional)", placeholder="e.g. yellow, navy")
         with o3:
-            style = st.text_input("Style (optional)", placeholder="e.g. casual cotton")
+            hair_choice = st.selectbox(
+                "Hair color (optional)",
+                [
+                    "None (keep photo)",
+                    "Black",
+                    "Dark brown",
+                    "Brown",
+                    "Light brown",
+                    "Blonde",
+                    "Platinum",
+                    "Auburn",
+                    "Copper",
+                    "Red",
+                    "Burgundy",
+                    "Pink",
+                    "Blue",
+                    "Silver",
+                ],
+                key="studio_hair_color",
+                help="Dyes only the hair after clothing try-on. Leave as None to keep the photo hair.",
+            )
         o4, o5 = st.columns(2)
         with o4:
             fast = st.checkbox("Fast preview size (512×384-class)", value=True)
@@ -1065,6 +1102,12 @@ def tryon_tab():
             return
 
         person = preprocess_person(person_raw, fast=fast)
+        requested_color = normalize_color_name(color)
+        hair_color = None if str(hair_choice).startswith("None") else str(hair_choice).strip()
+        if garment is not None and requested_color:
+            tinted = tint_garment(garment, requested_color)
+            if tinted is not None:
+                garment = tinted
 
         with st.spinner("Running SegFormer clothing segmentation…"):
             _warm_segformer()
@@ -1108,7 +1151,8 @@ def tryon_tab():
         if show_labels:
             _show_array(colorize_labels(label_map), caption="Label map", slot=v3)
         elif garment is not None:
-            _show_array(garment, caption="Garment", slot=v3)
+            g_cap = f"Garment · tinted {requested_color}" if requested_color else "Garment"
+            _show_array(garment, caption=g_cap, slot=v3)
 
         if not ok_gate:
             st.session_state.pop("tryon_person", None)
@@ -1118,7 +1162,7 @@ def tryon_tab():
 
         with st.spinner("Preparing garment description…"):
             caption, cap_gemini = caption_garment(
-                garment, category=category, color=color or None, style=style or None
+                garment, category=category, color=requested_color
             )
 
         with st.spinner(
@@ -1132,12 +1176,17 @@ def tryon_tab():
                 person,
                 mask,
                 category=category,
-                color=color or None,
-                style=style or None,
+                color=requested_color,
                 extra_prompt=caption,
                 garment=garment,
                 use_demo_fallback=True,
             )
+
+        if result is not None and hair_color:
+            with st.spinner("Applying hair color…"):
+                result, hair_warn = apply_hair_color(result, hair_color, label_map=label_map)
+            if hair_warn:
+                warn = f"{warn} {hair_warn}".strip() if warn else hair_warn
 
         st.markdown(
             f'<p class="mono" style="font-size:.8rem; color:var(--ink-soft); '
