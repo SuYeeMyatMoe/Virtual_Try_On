@@ -30,7 +30,8 @@ Online shoppers cannot physically try outfits before buying. Fit, color, and sty
 3. Virtually dresses the person with **IDM-VTON** (garment-image conditioned; CatVTON / SD2 / local overlay fallback). **Lower-body** garments skip IDM-VTON (that Space is upper-only) and use CatVTON with `cloth_type=lower`
 4. Recommends **Top-5 similar items** with **FashionCLIP**. Stylist AI also filters by **menswear / womenswear**, body type, and color season
 5. Uses **Gemini** to caption garments, analyze body tone + silhouette, chat as a stylist, and **transcribe voice** into editable text
-6. Opens **Google Shopping** (`tbm=shop`) so the shopper can buy a similar item
+6. After Analyze, downloads a **Stylist analysis PDF** (season, body tone, body type, palette — no catalog list)
+7. Opens **Google Shopping** (`tbm=shop`) so the shopper can buy a similar item
 
 Users get a visual try-on **and** a natural-language stylist — not just a raw model output.
 
@@ -51,7 +52,8 @@ Users get a visual try-on **and** a natural-language stylist — not just a raw 
 | 9    | Write stylist advice + result explanation | Gemini Text API         |
 | 10   | Stylist AI: body tone, palette, menswear/womenswear | Gemini JSON + CLIP + SegFormer |
 | 11   | Chat / voice → editable transcript → recs | Gemini STT + FashionCLIP |
-| 12   | Shop similar items                        | **Google Shopping** (`tbm=shop`) Buy / Find online |
+| 12   | Download analysis PDF                     | `fpdf2` (`src/analysis_report.py`) |
+| 13   | Shop similar items                        | **Google Shopping** (`tbm=shop`) Buy / Find online |
 
 ---
 
@@ -89,6 +91,7 @@ Avatar photo ──► SegFormer labels + face LAB season
               Rank catalog (menswear/womenswear + palette)
                       │
 Voice ──► Gemini STT ──► editable chat text ──► stylist reply
+Analyze ──► Download analysis PDF (tone, body type, palette)
 ```
 
 ### 4.2 Deep Learning path (perception)
@@ -105,7 +108,8 @@ Voice ──► Gemini STT ──► editable chat text ──► stylist reply
 4. **Gemini Text** gives occasion pairing and explains Studio scores
 5. **Gemini Chat** answers in short markdown (what to wear, why, up to 3 catalog titles). Grounded on palette, body type, and department
 6. **Gemini audio** transcribes a voice note; the UI shows the transcript as **editable text** before send
-7. **Buy** opens Google Shopping for the ranked SKU
+7. **Analysis PDF** (`build_analysis_pdf`) writes season, shop department, photo, body-tone notes, **body type**, color swatches, ease-off colors, and silhouette copy. Chat stays empty until the shopper types. Catalog picks are **not** in the PDF
+8. **Buy** opens Google Shopping for the ranked SKU
 
 ### 4.4 Gemini adaptation (not full fine-tuning)
 
@@ -130,6 +134,7 @@ We use **pretrained Gemini via API inference**, adapted with:
 | **Shop actions**          | Each match opens a **Google Shopping** search for that product title        |
 | **AI stylist copy**       | Garment description + advice + explanation (with Gemini key)                |
 | **Stylist analysis**      | Body tone, recommended color set, silhouette, shopping department (Auto / Woman / Man) |
+| **Analysis PDF**          | Download after Analyze: season, body tone, body type, palette, silhouette (no catalog list) |
 | **Voice chat**            | Mic → Gemini transcript → edit in the chatbot → send                        |
 | **Demo-ready UI**         | Polished Streamlit app (VESTURE brand)                                      |
 
@@ -154,6 +159,7 @@ Each row is **what we use** and **which part of the app it serves**.
 | **gradio_client** | Call **IDM-VTON** and **CatVTON** Hugging Face Spaces (Studio try-on) |
 | **huggingface_hub / Inference API** | Download weights; **SD 2 Inpainting** last-resort try-on via `router.huggingface.co/hf-inference` (legacy `api-inference.huggingface.co` is retired) |
 | **google-genai** | **Gemini 2.0 Flash**: garment caption, advice, explain, avatar JSON, chat, voice STT |
+| **fpdf2** | Stylist **analysis PDF** download (`src/analysis_report.py`) |
 | **python-dotenv** | Load `HF_TOKEN`, `GOOGLE_API_KEY`, `CONFIDENCE_GATE` from `.env` |
 | **requests / datasets** | Build catalog from HF Dataset Viewer / DeepFashion-style stills |
 | **Google Shopping URL** | Catalog / Top-5 **Buy / Find online** (`tbm=shop`) |
@@ -170,7 +176,7 @@ Each row is **what we use** and **which part of the app it serves**.
 | **Studio — Top-5** | Similar SKUs | FashionCLIP + `data/embeddings.npy` (`src/recommend.py`) |
 | **Studio — copy** | Caption, advice, explain | Gemini API (`src/llm_advisor.py`) |
 | **Catalog** | Browse / Save / Buy | Pandas CSV + Streamlit + Google Shopping URLs |
-| **Stylist AI** | Body-tone JSON, department, chat, **editable voice**, ranked recs | Gemini + FashionCLIP + SegFormer (`src/stylist.py`) |
+| **Stylist AI** | Body-tone JSON, department, chat, **editable voice**, ranked recs, **PDF export** | Gemini + FashionCLIP + SegFormer + fpdf2 (`src/stylist.py`, `src/analysis_report.py`) |
 | **Profile** | Saved pieces | `data/wishlist.json` + catalog rows |
 
 ### API keys

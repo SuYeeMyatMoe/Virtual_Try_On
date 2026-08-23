@@ -37,7 +37,6 @@ from src.stylist import (
     resolve_presentation,
     swatch_hex,
 )
-from src.analysis_report import build_analysis_pdf
 from src.tryon import list_demo_pairs, try_on_vton
 
 ROOT = Path(__file__).resolve().parent
@@ -1474,28 +1473,20 @@ def _remember_recs(items: list) -> None:
 
 
 def _stylist_pdf_bytes(avatar: Image.Image, analysis: dict, presentation: str) -> bytes:
-    """Build the analysis PDF once per analysis + rec set."""
-    recs = st.session_state.get("stylist_recs") or []
-    token = (
-        str(analysis.get("color_season") or ""),
-        str(analysis.get("body_type") or ""),
-        tuple(str(c) for c in (analysis.get("palette") or [])),
-        tuple(str(r.get("id")) for r in recs),
-        presentation,
+    """Build a fresh analysis PDF. Reload the exporter so Streamlit does not keep an old copy."""
+    import importlib
+
+    from src import analysis_report
+
+    importlib.reload(analysis_report)
+    return bytes(
+        analysis_report.build_analysis_pdf(
+            avatar,
+            analysis,
+            recs=st.session_state.get("stylist_recs") or [],
+            presentation=presentation,
+        )
     )
-    if st.session_state.get("stylist_pdf_token") == token and st.session_state.get("stylist_pdf_bytes"):
-        return st.session_state["stylist_pdf_bytes"]
-    pdf_bytes = build_analysis_pdf(
-        avatar,
-        analysis,
-        color_board=st.session_state.get("stylist_color_board"),
-        body_board=st.session_state.get("stylist_body_board"),
-        recs=recs,
-        presentation=presentation,
-    )
-    st.session_state["stylist_pdf_token"] = token
-    st.session_state["stylist_pdf_bytes"] = pdf_bytes
-    return pdf_bytes
 
 
 def _render_stylist_looks(results: list, *, key_prefix: str) -> None:
@@ -1918,8 +1909,6 @@ def stylist_tab():
         st.session_state["stylist_all_recs"] = []
         _remember_recs(recs)
         st.session_state["stylist_messages"] = []
-        st.session_state.pop("stylist_pdf_token", None)
-        st.session_state.pop("stylist_pdf_bytes", None)
 
     analysis = st.session_state.get("stylist_analysis")
     if analysis and avatar is not None:
@@ -1999,6 +1988,7 @@ def stylist_tab():
                         mime="application/pdf",
                         type="secondary",
                         width="stretch",
+                        key="stylist_pdf_download_v6",
                         help="Save your color season, palette, silhouette notes, and catalog picks.",
                     )
                 except Exception as exc:
