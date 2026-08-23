@@ -30,8 +30,7 @@ Online shoppers cannot physically try outfits before buying. Fit, color, and sty
 3. Virtually dresses the person with **IDM-VTON** (garment-image conditioned; CatVTON / SD2 / local overlay fallback). **Lower-body** garments skip IDM-VTON (that Space is upper-only) and use CatVTON with `cloth_type=lower`
 4. Recommends **Top-5 similar items** with **FashionCLIP**. Stylist AI also filters by **menswear / womenswear**, body type, and color season
 5. Uses **Gemini** to caption garments, analyze body tone + silhouette, chat as a stylist, and **transcribe voice** into editable text
-6. After Analyze, downloads a **Stylist analysis PDF** (season, body tone, body type, palette — no catalog list)
-7. Opens **Google Shopping** (`tbm=shop`) so the shopper can buy a similar item
+6. Opens **Google Shopping** (`tbm=shop`) so the shopper can buy a similar item
 
 Users get a visual try-on **and** a natural-language stylist — not just a raw model output.
 
@@ -52,7 +51,7 @@ Users get a visual try-on **and** a natural-language stylist — not just a raw 
 | 9    | Write stylist advice + result explanation | Gemini Text API         |
 | 10   | Stylist AI: body tone, palette, menswear/womenswear | Gemini JSON + CLIP + SegFormer |
 | 11   | Chat / voice → editable transcript → recs | Gemini STT + FashionCLIP |
-| 12   | Download analysis PDF                     | `fpdf2` (`src/analysis_report.py`) |
+| 12   | Download stylist analysis PDF             | fpdf2 (`src/analysis_report.py`) |
 | 13   | Shop similar items                        | **Google Shopping** (`tbm=shop`) Buy / Find online |
 
 ---
@@ -91,7 +90,6 @@ Avatar photo ──► SegFormer labels + face LAB season
               Rank catalog (menswear/womenswear + palette)
                       │
 Voice ──► Gemini STT ──► editable chat text ──► stylist reply
-Analyze ──► Download analysis PDF (tone, body type, palette)
 ```
 
 ### 4.2 Deep Learning path (perception)
@@ -108,8 +106,7 @@ Analyze ──► Download analysis PDF (tone, body type, palette)
 4. **Gemini Text** gives occasion pairing and explains Studio scores
 5. **Gemini Chat** answers in short markdown (what to wear, why, up to 3 catalog titles). Grounded on palette, body type, and department
 6. **Gemini audio** transcribes a voice note; the UI shows the transcript as **editable text** before send
-7. **Analysis PDF** (`build_analysis_pdf`) writes season, shop department, photo, body-tone notes, **body type**, color swatches, ease-off colors, and silhouette copy. Chat stays empty until the shopper types. Catalog picks are **not** in the PDF
-8. **Buy** opens Google Shopping for the ranked SKU
+7. **Buy** opens Google Shopping for the ranked SKU
 
 ### 4.4 Gemini adaptation (not full fine-tuning)
 
@@ -121,6 +118,127 @@ We use **pretrained Gemini via API inference**, adapted with:
 - Grounding on SegFormer / FashionCLIP scores, palette, body type, and `presentation`
 
 **Viva answer:** _We did not fine-tune Gemini weights. We adapted pretrained Gemini through inference + domain prompting, grounded on our deep-learning outputs — allowed under “transfer learning, fine-tuning, or model inference.”_
+
+### 4.5 Technique → file (what is deep learning)
+
+VESTURE is a **hybrid DL project**: pretrained neural nets do perception and retrieval; Gemini is **model inference** (no weight update); some steps are classical CV. We do **not** train from scratch.
+
+| Technique | File | Deep-learning relation |
+| --- | --- | --- |
+| Preprocess (EXIF, RGB, letterbox) | `src/preprocess.py` | **Not a neural net** — prepares pixels for the models |
+| Clothing **mask** + `seg_conf` | `src/segmentation.py` | **Yes — SegFormer** (transformer segmentation). Softmax on 18 classes → binary mask |
+| Dilate / feather / `mask_quality` | `src/segmentation.py`, `src/confidence.py` | **Not a neural net** — morphology so the mask is usable |
+| 0.85 gate + `tryon_conf` | `src/confidence.py` | **Uses DL outputs** (SegFormer softmax + FashionCLIP cosine) + mask heuristic |
+| Virtual try-on | `src/tryon.py` | **Yes — diffusion**: IDM-VTON (SDXL), CatVTON, SD2 inpaint; last resort `run_local_overlay` is a paste, not a net |
+| Top-5 + menswear filter | `src/recommend.py` | **Yes — FashionCLIP** (contrastive vision–language). Cosine vs `embeddings.npy` |
+| Catalog build + `shop_url` | `src/catalog_builder.py` | FashionCLIP **encodes** SKUs once (inference). Writes Google Shopping URLs |
+| Gemini caption / chat / STT / JSON | `src/llm_advisor.py` | **Yes — LLM inference** (pretrained Gemini). Not fine-tuned |
+| 12-season + body + recs | `src/stylist.py` | Mix: SegFormer labels + CLIP audience (**DL**) + LAB season (classical) + Gemini JSON |
+| Analysis PDF | `src/analysis_report.py` | **Not DL** — fpdf2 export of the analysis |
+| UI (Studio / Stylist / Buy) | `app.py` | Calls the files above; **Buy** opens the Shopping URL |
+
+**Course wording:** transfer learning + **model inference**. Authors already fine-tuned SegFormer (ATR), IDM-VTON (VITON-HD), FashionCLIP (GCL). We freeze those weights.
+
+### 4.6 Masking workflow (Studio)
+
+File: `src/segmentation.py` (mask) → `src/confidence.py` (gate) → `src/tryon.py` (use mask).
+
+```text
+Person photo
+    → EXIF / RGB / letterbox 768×1024          src/preprocess.py
+    → SegFormer-B2 (18-class label map)        src/segmentation.py
+    → Keep clothing IDs for the region:
+         upper → 4 (Upper-clothes) + 7 (Dress)
+         lower → 5 (Skirt) + 6 (Pants), waist-clipped
+         dress → 7 (Dress)
+    → Binary mask → dilate 3× → Gaussian σ=1.5
+    → White (255) = change this clothing
+      Black (0)   = keep face, arms, background
+    → seg_conf = mean softmax on clothing pixels
+    → if seg_conf < 0.85 → show mask only; do not call try-on
+    → IDM-VTON / CatVTON: Space builds its own region;
+         we still send CatVTON layers[0] (our mask or a blank layer)
+    → SD2 / local overlay: our mask is the replace region
+    → crop_by_mask → FashionCLIP compares fabric, not the wall
+```
+
+Studio also shows `colorize_labels` (18-color debug map). Face / hair / arms stay black so try-on should not redraw identity. Full label table: §7.10.
+
+### 4.7 How confidence is calculated
+
+File: `src/confidence.py` (`tryon_confidence`, `mask_quality`). Scores are in **[0, 1]**. They are **proxy scores**, not calibrated probabilities.
+
+| Score | Formula / rule | File |
+| --- | --- | --- |
+| **`seg_conf`** | Mean of SegFormer **softmax** on pixels predicted as the chosen clothing classes | `src/segmentation.py` |
+| **`mask_quality`** | `0.5 · coverage + 0.5 · connectedness`. Coverage = 1 if clothing is **5–55%** of the photo; connectedness = largest blob / all clothing pixels | `src/confidence.py` |
+| **`clip_sim`** | Cosine( FashionCLIP(garment) , FashionCLIP(try-on crop by mask) ) | `src/recommend.py` |
+| **`tryon_conf`** | **`0.4·seg_conf + 0.4·clip_sim + 0.2·mask_quality`** | `src/confidence.py` |
+| **`reco_conf`** | Cosine(query, `embeddings.npy` row). Stylist adds palette **+0.22–0.35**, avoid-color penalty, department **+0.05** | `src/recommend.py` |
+
+**Gates**
+
+- **Hard:** if `seg_conf < 0.85` → no Space call (`evaluate_segmentation_gate`).
+- **Soft:** `tryon_conf ≥ 0.85` and Top-5 `similarity ≥ 0.85` only **highlight** (PASS pill / high-confidence tile). They do not block the result.
+
+`CONFIDENCE_GATE` in `.env` defaults to **0.85**. Full bars and order: §7.7.
+
+### 4.8 Dataset — how many
+
+We **do not retrain**. Counts are (A) what the **authors** trained on, and (B) what **this repo** loads.
+
+| Dataset | How many | Used how | Link |
+| --- | --- | --- | --- |
+| **ATR** human parsing | **17,706** image–mask pairs, **18** classes | Inside SegFormer weights (not stored here) | [HF dataset](https://huggingface.co/datasets/mattmdjaga/human_parsing_dataset) |
+| **VITON-HD** | **13,679** pairs (train **11,647** / test **2,032**), 1024×768 | IDM-VTON pretrain; optional Studio demos | [GitHub](https://github.com/shadow2496/VITON-HD) |
+| **Dress Code** | **53,792** garments / **107,584** images | Try-on literature / CatVTON mix | [GitHub](https://github.com/aimagelab/dress-code) |
+| **CatVTON train mix** | ~**73,000** public try-on samples | Inside CatVTON weights | [HF model](https://huggingface.co/zhengchong/CatVTON) |
+| **Marqo FashionCLIP** | **1M+** fashion SKUs (GCL); eval In-shop **52,591** | Inside FashionCLIP weights | [HF model](https://huggingface.co/Marqo/marqo-fashionCLIP) · [In-shop](https://huggingface.co/datasets/Marqo/deepfashion-inshop) |
+| **DeepFashion (full)** | **800k+** images | Citation only — too large to index | [CUHK page](https://mmlab.ie.cuhk.edu.hk/projects/DeepFashion.html) |
+| **Kaggle Fashion Product Images** | **~44,000** SKUs | Same *style* as our catalog titles | [Kaggle](https://www.kaggle.com/datasets/paramaggarwal/fashion-product-images-dataset) |
+| **Lamoda product stills** | High-res shop photos (catalog builder) | Download source for `data/catalog/` | [HF dataset](https://huggingface.co/datasets/PestoRosso/lamoda-fashion-product-images) |
+| **Runtime catalog** `data/catalog.csv` | **~95 SKUs** (≈ 33 upper / 30 lower / 32 dress; ~**33** pass menswear filter) | What FashionCLIP actually ranks | In-repo `data/catalog.csv` |
+| **Catalog embeddings** | **1 vector per SKU** in `embeddings.npy` | Cosine Top-5 | In-repo `data/embeddings.npy` |
+| **Studio demo pairs** | Optional **16** (`python -m src.demo_samples --n 16`) | One-click try-on | Built locally from VITON-HD-style pairs |
+| **Self-collected uploads** | **20–50** recommended for the live demo | User photos in Studio / Stylist | — |
+
+Build catalog (does **not** train): `python -m src.catalog_builder --from-deepfashion --n 90`.
+
+**Viva — our recommendation data (not from a pretrained model):** we use a small DeepFashion / Lamoda-style product catalog (~95 items) as our own data. All vision models stay pretrained; we only index that catalog and take user photos. FashionCLIP ranks those SKUs for Studio Top-5, Catalog, and Stylist looks.
+
+| Our rec dataset | Role | Link |
+| --- | --- | --- |
+| **Lamoda product stills** | High-res photos downloaded into `data/catalog/` | [HF `PestoRosso/lamoda-fashion-product-images`](https://huggingface.co/datasets/PestoRosso/lamoda-fashion-product-images) |
+| **Marqo DeepFashion In-shop** | Fallback catalog stills | [HF `Marqo/deepfashion-inshop`](https://huggingface.co/datasets/Marqo/deepfashion-inshop) |
+| **Marqo DeepFashion Multimodal** | Fallback catalog stills | [HF `Marqo/deepfashion-multimodal`](https://huggingface.co/datasets/Marqo/deepfashion-multimodal) |
+| **DeepFashion (CUHK, full)** | Source family / literature — we do **not** store 800k images | [CUHK project page](https://mmlab.ie.cuhk.edu.hk/projects/DeepFashion.html) |
+| **Runtime index** | What we actually recommend from | In-repo `data/catalog.csv` (~95 SKUs) + `data/embeddings.npy` |
+
+### 4.9 How Google Shopping is connected
+
+There is **no Google Shopping API key** and **no scrape**. Deep learning only chooses **which** product title. The shop-out is a normal Search URL.
+
+1. FashionCLIP ranks a catalog row (`src/recommend.py`).
+2. `shop_url_for(title)` (same file; also `src/catalog_builder.py` when the CSV is built) writes:
+
+```text
+https://www.google.com/search?tbm=shop&q={urlencode(title + " buy online")}
+```
+
+| Piece | Meaning |
+| --- | --- |
+| `tbm=shop` | Opens Google **Shopping** tab (cards, prices, sellers) |
+| `q=` | The **catalog / recommendation title** (not a merchant product ID) |
+| Button | **Buy / Find online** in Studio, Catalog, and Stylist (`app.py`) |
+
+Google then ranks live merchant listings for that query. We do not store prices or seller accounts.
+
+```text
+Photo / garment / typed request
+        → FashionCLIP (deep learning) → Top-5 titles in our ~95 SKU catalog
+        → Buy → browser opens tbm=shop URL
+        → Google Shopping shows where to buy a similar item
+```
 
 ---
 
@@ -134,7 +252,7 @@ We use **pretrained Gemini via API inference**, adapted with:
 | **Shop actions**          | Each match opens a **Google Shopping** search for that product title        |
 | **AI stylist copy**       | Garment description + advice + explanation (with Gemini key)                |
 | **Stylist analysis**      | Body tone, recommended color set, silhouette, shopping department (Auto / Woman / Man) |
-| **Analysis PDF**          | Download after Analyze: season, body tone, body type, palette, silhouette (no catalog list) |
+| **Analysis PDF**          | After Analyze: **Download analysis PDF** (season, body tone, body type, palette, silhouette; no catalog list) |
 | **Voice chat**            | Mic → Gemini transcript → edit in the chatbot → send                        |
 | **Demo-ready UI**         | Polished Streamlit app (VESTURE brand)                                      |
 
@@ -159,7 +277,7 @@ Each row is **what we use** and **which part of the app it serves**.
 | **gradio_client** | Call **IDM-VTON** and **CatVTON** Hugging Face Spaces (Studio try-on) |
 | **huggingface_hub / Inference API** | Download weights; **SD 2 Inpainting** last-resort try-on via `router.huggingface.co/hf-inference` (legacy `api-inference.huggingface.co` is retired) |
 | **google-genai** | **Gemini 2.0 Flash**: garment caption, advice, explain, avatar JSON, chat, voice STT |
-| **fpdf2** | Stylist **analysis PDF** download (`src/analysis_report.py`) |
+| **fpdf2** | Stylist **analysis PDF** after Analyze (`src/analysis_report.py`) |
 | **python-dotenv** | Load `HF_TOKEN`, `GOOGLE_API_KEY`, `CONFIDENCE_GATE` from `.env` |
 | **requests / datasets** | Build catalog from HF Dataset Viewer / DeepFashion-style stills |
 | **Google Shopping URL** | Catalog / Top-5 **Buy / Find online** (`tbm=shop`) |
@@ -176,7 +294,7 @@ Each row is **what we use** and **which part of the app it serves**.
 | **Studio — Top-5** | Similar SKUs | FashionCLIP + `data/embeddings.npy` (`src/recommend.py`) |
 | **Studio — copy** | Caption, advice, explain | Gemini API (`src/llm_advisor.py`) |
 | **Catalog** | Browse / Save / Buy | Pandas CSV + Streamlit + Google Shopping URLs |
-| **Stylist AI** | Body-tone JSON, department, chat, **editable voice**, ranked recs, **PDF export** | Gemini + FashionCLIP + SegFormer + fpdf2 (`src/stylist.py`, `src/analysis_report.py`) |
+| **Stylist AI** | Body-tone JSON, department, chat, **editable voice**, ranked recs, **analysis PDF** | Gemini + FashionCLIP + SegFormer + fpdf2 (`src/stylist.py`, `src/analysis_report.py`) |
 | **Profile** | Saved pieces | `data/wishlist.json` + catalog rows |
 
 ### API keys
@@ -470,6 +588,10 @@ Mic audio is **not** sent straight into chat. `transcribe_audio` sniffs WAV / We
 
 `catalog_for_query` enriches the typed (or transcribed) request with “menswear men's clothing…” or “womenswear…”, palette, season, body type; FashionCLIP text tower; color weight **0.35**; same audience filter. Chat lists **up to 3** titles.
 
+**Analysis PDF**
+
+After Analyze, **Download analysis PDF** (`src/analysis_report.py`, fpdf2) writes a one-page report: title, season + undertone, shop department, avatar, **01 Body tone** (notes + body type), recommended color set / ease-off swatches, **02 Silhouette**. Catalog picks are **not** included. Chat stays empty until the shopper types.
+
 ---
 
 ## 9. Datasets
@@ -478,15 +600,16 @@ Two layers: **(A)** datasets the **pretrained models** were trained on (citation
 
 ### 9.1 Provenance datasets (inside the checkpoints — we do not retrain)
 
-| Dataset | Stats | Paper / source | Which model ate it |
-| --- | --- | --- | --- |
-| **ATR** (HF `mattmdjaga/human_parsing_dataset`) | **17,706** image–mask pairs; **18** labels (Background, Hat, Hair, Upper-clothes, Skirt, Pants, Dress, …) | Liang et al., Deep Human Parsing | SegFormer-B2 Clothes |
-| **VITON-HD** | **13,679** frontal woman + upper-garment pairs, **1024×768**; train **11,647** / test **2,032** | Choi et al., CVPR 2021 | IDM-VTON (and CatVTON) training |
-| **Dress Code** | **53,792** garments / **107,584** images (in-shop + worn); pairs ≈ 15,363 upper / 8,951 lower / 29,478 dresses, 1024×768 | Morelli et al., 2022 | Multi-category try-on; IDM-VTON eval; CatVTON |
-| **LAION-2B / WIT** | Web-scale image–text | OpenCLIP / CLIP papers | FashionCLIP base + CLIP fallback |
-| **Marqo fashion mix (~1M SKUs)** | DeepFashion In-shop **52,591**; DeepFashion Multimodal **42,537**; Fashion200K **201,624**; KAGL **44,434**; Atlas **78,370**; Polyvore **94,096**; iMaterialist **721,065** (eval / GCL mix) | Marqo FashionCLIP card | FashionCLIP domain fine-tune + published retrieval numbers |
-| **CUHK DeepFashion** | **800k+** images; 50 categories; 1,000 attributes; 300k+ consumer–shop pairs | Liu et al., CVPR 2016 | Literature benchmark for clothes retrieval (not stored in-repo) |
-| **Kaggle Fashion Product Images** | **~44,000** Myntra-style SKUs, titles, colors, article types | Aggarwal / Kaggle | Typical visual-recommendation catalog; same *style* as our DF* titles |
+| Dataset | Stats | Paper / source | Which model ate it | Link |
+| --- | --- | --- | --- | --- |
+| **ATR** | **17,706** image–mask pairs; **18** labels (Background, Hat, Hair, Upper-clothes, Skirt, Pants, Dress, …) | Liang et al., Deep Human Parsing | SegFormer-B2 Clothes | [HF `mattmdjaga/human_parsing_dataset`](https://huggingface.co/datasets/mattmdjaga/human_parsing_dataset) |
+| **VITON-HD** | **13,679** frontal woman + upper-garment pairs, **1024×768**; train **11,647** / test **2,032** | Choi et al., CVPR 2021 | IDM-VTON (and CatVTON) training | [GitHub `shadow2496/VITON-HD`](https://github.com/shadow2496/VITON-HD) |
+| **Dress Code** | **53,792** garments / **107,584** images (in-shop + worn); pairs ≈ 15,363 upper / 8,951 lower / 29,478 dresses, 1024×768 | Morelli et al., 2022 | Multi-category try-on; IDM-VTON eval; CatVTON | [GitHub `aimagelab/dress-code`](https://github.com/aimagelab/dress-code) |
+| **LAION-2B / WIT** | Web-scale image–text | OpenCLIP / CLIP papers | FashionCLIP base + CLIP fallback | [LAION](https://laion.ai/blog/laion-5b/) · [CLIP / WIT](https://github.com/openai/CLIP) |
+| **Marqo fashion mix (~1M SKUs)** | DeepFashion In-shop **52,591**; DeepFashion Multimodal **42,537**; Fashion200K **201,624**; KAGL **44,434**; Atlas **78,370**; Polyvore **94,096**; iMaterialist **721,065** (eval / GCL mix) | Marqo FashionCLIP card | FashionCLIP domain fine-tune + published retrieval numbers | [Model](https://huggingface.co/Marqo/marqo-fashionCLIP) · [In-shop](https://huggingface.co/datasets/Marqo/deepfashion-inshop) · [Multimodal](https://huggingface.co/datasets/Marqo/deepfashion-multimodal) |
+| **CUHK DeepFashion** | **800k+** images; 50 categories; 1,000 attributes; 300k+ consumer–shop pairs | Liu et al., CVPR 2016 | Literature benchmark for clothes retrieval (not stored in-repo) | [Project page](https://mmlab.ie.cuhk.edu.hk/projects/DeepFashion.html) |
+| **Kaggle Fashion Product Images** | **~44,000** Myntra-style SKUs, titles, colors, article types | Aggarwal / Kaggle | Typical visual-recommendation catalog; same *style* as our DF* titles | [Kaggle](https://www.kaggle.com/datasets/paramaggarwal/fashion-product-images-dataset) |
+| **Lamoda fashion stills** | High-res product photos (min side 512 px in our builder) | HF Dataset Viewer | Runtime catalog download (`src/catalog_builder.py`) | [HF `PestoRosso/lamoda-fashion-product-images`](https://huggingface.co/datasets/PestoRosso/lamoda-fashion-product-images) |
 
 ### 9.2 Runtime data the Streamlit app uses
 
@@ -512,6 +635,8 @@ Download order in `src/catalog_builder.py`:
 
 Rows keep `id, title, category, color, image_path, shop_url`. Accessories / footwear / innerwear are skipped so retrieval stays on clothing.
 
+**Viva:** this ~95-item subset is the **recommendation dataset**. We did not train FashionCLIP on it — we only embed and rank it.
+
 ### 9.3 How each dataset is used
 
 | Dataset | Train from scratch in this project? | Loaded at app runtime? | Slides? |
@@ -521,7 +646,7 @@ Rows keep `id, title, category, color, image_path, shop_url`. Accessories / foot
 | Dress Code | No | No | Yes — multi-category try-on |
 | DeepFashion / Lamoda / Kaggle-style products | No | **Yes — subset becomes the catalog** | Yes — recommendation data |
 | FashionCLIP 1M mix | No (inside Marqo weights) | Via the checkpoint | Yes — why FashionCLIP beats CLIP |
-| Local `data/catalog/` | No | **Yes** | Yes |
+| Local `data/catalog/` (~95 SKUs) | No | **Yes — recommendation index** | Yes |
 | Self-collected | No | **Yes** (uploads) | Yes |
 
 ### 9.4 Preprocessing
@@ -532,6 +657,24 @@ Rows keep `id, title, category, color, image_path, shop_url`. Accessories / foot
 4. Garment: RGB → Gemini one-line caption (or template).
 5. Catalog: filter apparel → JPEG → FashionCLIP embed → `embeddings.npy`.
 
+### 9.5 Dataset links (slides / viva)
+
+| Dataset | URL |
+| --- | --- |
+| ATR (SegFormer train set) | https://huggingface.co/datasets/mattmdjaga/human_parsing_dataset |
+| VITON-HD | https://github.com/shadow2496/VITON-HD |
+| Dress Code | https://github.com/aimagelab/dress-code |
+| DeepFashion (CUHK) | https://mmlab.ie.cuhk.edu.hk/projects/DeepFashion.html |
+| Marqo DeepFashion In-shop | https://huggingface.co/datasets/Marqo/deepfashion-inshop |
+| Marqo DeepFashion Multimodal | https://huggingface.co/datasets/Marqo/deepfashion-multimodal |
+| Lamoda product stills (our rec catalog download) | https://huggingface.co/datasets/PestoRosso/lamoda-fashion-product-images |
+| Kaggle Fashion Product Images | https://www.kaggle.com/datasets/paramaggarwal/fashion-product-images-dataset |
+| **Our recommendation catalog** (~95 SKUs in-repo) | `data/catalog.csv` — built from Lamoda + DeepFashion In-shop / Multimodal |
+| Marqo FashionCLIP (weights + card) | https://huggingface.co/Marqo/marqo-fashionCLIP |
+| SegFormer-B2 Clothes (weights) | https://huggingface.co/mattmdjaga/segformer_b2_clothes |
+| IDM-VTON Space / weights | https://huggingface.co/spaces/yisol/IDM-VTON · https://huggingface.co/yisol/IDM-VTON |
+| CatVTON Space / weights | https://huggingface.co/spaces/zhengchong/CatVTON · https://huggingface.co/zhengchong/CatVTON |
+
 ---
 
 ## 10. Recommendation dataset, deep-learning retrieval, and Google Shopping
@@ -539,6 +682,8 @@ Rows keep `id, title, category, color, image_path, shop_url`. Accessories / foot
 Industry fashion recommenders (FashionCLIP paper, *Scientific Reports* 2022; Marqo GCL; Kaggle Fashion Product Images visual-search notebooks) follow the same pattern: **embed catalog images once**, **embed the query**, **rank by cosine similarity**, then **send the shopper to a store**. VESTURE implements that pipeline on a small in-app catalog and opens **Google Shopping** for purchase.
 
 ### 10.1 Recommendation dataset (what is ranked)
+
+**Viva:** we use a small DeepFashion / Lamoda-style product catalog (~95 items) as our own data. All vision models stay pretrained; we only index that catalog and take user photos. That index is what FashionCLIP recommends from (Studio Top-5, Catalog, Stylist). Sources: [Lamoda](https://huggingface.co/datasets/PestoRosso/lamoda-fashion-product-images) · [DeepFashion In-shop](https://huggingface.co/datasets/Marqo/deepfashion-inshop) · [DeepFashion Multimodal](https://huggingface.co/datasets/Marqo/deepfashion-multimodal) · [CUHK DeepFashion](https://mmlab.ie.cuhk.edu.hk/projects/DeepFashion.html).
 
 The retrieval index is **only** `data/catalog.csv` — not the full 800k DeepFashion dump (too large for a class demo). Each row is a shoppable-style product still plus metadata:
 
@@ -637,7 +782,8 @@ Buy → Google Shopping search for that title
 - LLM panels: AI garment description, stylist advice, result explanation
 - Stylist **Analyze:** body tone, recommended color set, silhouette, **Shop for** Auto / Woman / Man
 - Stylist looks ranked by FashionCLIP + palette + menswear/womenswear
-- Stylist chat: markdown replies; catalog titles as a numbered list (max 3)
+- **Download analysis PDF** after Analyze (season, body tone, body type, palette, silhouette; no catalog list)
+- Stylist chat: stays empty until you type; markdown replies; catalog titles as a numbered list (max 3)
 - Voice: Gemini STT → **editable** chat text → Send / Discard (does not auto-send)
 
 ---
@@ -661,6 +807,7 @@ Virtual_Try_On/
 │   ├── catalog_builder.py # DeepFashion / Lamoda subset + embeddings
 │   ├── llm_advisor.py     # Gemini caption / JSON avatar / chat / STT
 │   ├── stylist.py         # 12-season, presentation, catalog_for_*
+│   ├── analysis_report.py # Stylist analysis PDF (fpdf2)
 │   └── demo_samples.py    # VITON-HD-style Studio pairs
 ├── data/catalog/
 ├── data/samples/
@@ -703,7 +850,7 @@ Virtual_Try_On/
 | Pretrained DL models | SegFormer-B2, IDM-VTON, CatVTON, SD2, FashionCLIP     |
 | Transfer / inference | HF Spaces + Gemini `generateContent`; prompt adaptation |
 | Dataset description  | ATR, VITON-HD, Dress Code, DeepFashion/Lamoda catalog   |
-| Recommendation data  | FashionCLIP index + palette / menswear filters; shop-out via Google Shopping |
+| Recommendation data  | ~95-SKU DeepFashion/Lamoda catalog (`data/catalog.csv`); FashionCLIP index + palette / menswear filters; shop-out via Google Shopping |
 | Streamlit UI         | Title, description, upload, predict, result, confidence |
 | Analysis             | Confidence metrics, strengths/limits                    |
 
@@ -719,7 +866,8 @@ Virtual_Try_On/
 | CatVTON | Chong et al., *Concatenation Is All You Need for Virtual Try-On*, ICLR 2025, arXiv:2407.15886. Space `zhengchong/CatVTON`. |
 | VITON-HD | Choi et al., CVPR 2021 — 13,679 pairs at 1024×768. |
 | Dress Code | Morelli et al., 2022 — 53,792 garments / 107,584 images. |
-| DeepFashion | Liu et al., *DeepFashion*, CVPR 2016 — 800k+ images, in-shop + consumer-to-shop retrieval. |
+| DeepFashion | Liu et al., *DeepFashion*, CVPR 2016 — 800k+ images, in-shop + consumer-to-shop retrieval. [CUHK](https://mmlab.ie.cuhk.edu.hk/projects/DeepFashion.html). |
+| **Our rec catalog** | ~95 SKUs in `data/catalog.csv` (not a pretrained train set). Download: [Lamoda](https://huggingface.co/datasets/PestoRosso/lamoda-fashion-product-images), [In-shop](https://huggingface.co/datasets/Marqo/deepfashion-inshop), [Multimodal](https://huggingface.co/datasets/Marqo/deepfashion-multimodal). FashionCLIP only **indexes** this for Top-5 / Stylist. |
 | FashionCLIP (concept) | Chia et al., *Contrastive language and vision learning of general fashion concepts*, Scientific Reports 2022. |
 | Marqo FashionCLIP | Fine-tuned ViT-B-16 LAION-2B + GCL; HF `Marqo/marqo-fashionCLIP`. Eval: DeepFashion In-shop (52,591), Multimodal (42,537), Fashion200K, KAGL, Atlas, Polyvore. |
 | CLIP fallback | Radford et al., *Learning Transferable Visual Models From Natural Language Supervision*, 2021. `openai/clip-vit-base-patch32`. |
