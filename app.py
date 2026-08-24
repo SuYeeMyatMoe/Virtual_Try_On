@@ -66,13 +66,13 @@ LOGO_PATH = ROOT / "assets" / "logo.png"
 # Stitch-style editorial stills (user lookbook references)
 EDITORIAL_LOOKS = [
     {
-        "file": "screen1 - Copy.png",
-        "id": "VE003",
+        "file": "screen1.png",
+        "id": "VE001",
         "eyebrow": "Digital exclusive",
-        "title": "Neon couture drape",
-        "blurb": "Woven silk with circuit light",
-        "category": "dress",
-        "color": "violet",
+        "title": "Reconstructed trench",
+        "blurb": "Tailored outerwear in charcoal.",
+        "category": "upper",
+        "color": "charcoal",
     },
     {
         "file": "screen5.png",
@@ -2217,27 +2217,66 @@ def stylist_tab():
         "Upload an avatar for a body-tone reading, then get a color set and catalog looks.",
     )
 
+    p15_default = ROOT / "data" / "catalog" / "images" / "person_15.png"
+    if not p15_default.exists():
+        p15_default = ROOT / "data" / "catalog" / "images" / "person_15.jpg"
+    if not p15_default.exists():
+        p15_default = ROOT / "data" / "samples" / "person_15.jpg"
+
+    if st.session_state.get("stylist_avatar") is None and p15_default.exists():
+        st.session_state["stylist_avatar"] = load_rgb(Image.open(p15_default))
+
+    uploaded_file = st.session_state.get("stylist_upload")
+    if uploaded_file is not None:
+        st.session_state["stylist_avatar"] = load_rgb(Image.open(uploaded_file))
+
+    sample_avatars = sorted((ROOT / "data" / "samples").glob("person_*.jpg"))
+
     vis, form = st.columns([1.05, 1], gap="large")
     with vis:
         avatar = st.session_state.get("stylist_avatar")
         if avatar is not None:
             st.image(_array_jpeg(avatar, max_width=720), caption="Your avatar", width="stretch")
         else:
-            stylist_ref = _look_preview_path("screen3_crop.png") or _look_path("screen3_crop.png")
+            stylist_ref = _look_path("person_15.png") or _look_path("person_15.jpg") or _look_preview_path("screen3_crop.png") or _look_path("screen3_crop.png")
             if stylist_ref:
                 _show_photo(stylist_ref, max_width=720)
             st.caption("Full-body, front-facing photos give the clearest color and silhouette read.")
     with form:
-        uploaded = st.file_uploader(
+        st.file_uploader(
             "Avatar photo",
             type=["jpg", "jpeg", "png", "webp"],
             key="stylist_upload",
             help="A front-facing portrait or full-body shot works best.",
         )
-        if uploaded is not None:
-            avatar = load_rgb(Image.open(uploaded))
-            st.session_state["stylist_avatar"] = avatar
-        elif avatar is None and st.session_state.get("tryon_person") is not None:
+        if sample_avatars:
+            avatar_options = ["Upload my own / Select sample avatar..."] + [p.name for p in sample_avatars]
+
+            def _on_sample_change():
+                sel = st.session_state.get("stylist_sample_avatar")
+                if sel and sel != "Upload my own / Select sample avatar...":
+                    spath = ROOT / "data" / "samples" / sel
+                    if not spath.exists():
+                        spath = ROOT / "data" / "catalog" / "images" / sel
+                    if spath.exists():
+                        st.session_state["stylist_avatar"] = load_rgb(Image.open(spath))
+
+            idx_default = 0
+            curr_sel = st.session_state.get("stylist_sample_avatar")
+            if curr_sel in avatar_options:
+                idx_default = avatar_options.index(curr_sel)
+
+            st.selectbox(
+                "Sample avatar photo",
+                avatar_options,
+                index=idx_default,
+                key="stylist_sample_avatar",
+                on_change=_on_sample_change,
+                help="Choose a sample subject photo.",
+            )
+
+        avatar = st.session_state.get("stylist_avatar")
+        if avatar is None and st.session_state.get("tryon_person") is not None:
             st.caption("No avatar yet — you can reuse the last Studio subject photo.")
             if st.button("Use last Studio photo", type="secondary"):
                 st.session_state["stylist_avatar"] = st.session_state["tryon_person"]

@@ -1,7 +1,5 @@
 id,title,category,color,image_path,shop_url
 VE001,Reconstructed Trench,upper,charcoal,data/catalog/images/screen1.png,https://www.google.com/search?tbm=shop&q=reconstructed+trench+coat+buy
-VE002,Volume Linen Dress,dress,ivory,data/catalog/images/screen2.png,https://www.google.com/search?tbm=shop&q=volume+linen+dress+buy
-VE003,Neon Couture Drape,dress,violet,data/catalog/images/screen1 - Copy.png,https://www.google.com/search?tbm=shop&q=iridescent+violet+couture+dress+buy
 VE004,Noir Leather Messenger,upper,black,data/catalog/images/screen5.png,https://www.google.com/search?tbm=shop&q=black+leather+messenger+bag+buy
 VE005,Atelier Black Blazer,upper,black,data/catalog/images/screen4.png,https://www.google.com/search?tbm=shop&q=black+tailored+blazer+buy
 DF001,Turtle Check Men Navy Blue Shirt,upper,navy blue,data/catalog/images/df_upper_001.jpg,https://www.google.com/search?tbm=shop&q=Turtle+Check+Men+Navy+Blue+Shirt+buy
@@ -37,16 +35,12 @@ DF030,Tonga Women Maroon Top,upper,off white,data/catalog/images/df_upper_030.jp
 DF031,Peter England Men Party Blue Jeans,lower,blue,data/catalog/images/df_lower_031.jpg,https://www.google.com/search?tbm=shop&q=Peter+England+Men+Party+Blue+Jeans+buy
 DF032,Manchester United Men Solid Black Track Pants,lower,black,data/catalog/images/df_lower_032.jpg,https://www.google.com/search?tbm=shop&q=Manchester+United+Men+Solid+Black+Track+Pants+buy
 DF033,Puma Men Long Logo Black Bermuda,lower,black,data/catalog/images/df_lower_033.jpg,https://www.google.com/search?tbm=shop&q=Puma+Men+Long+Logo+Black+Bermuda+buy
-DF034,Do U Speak Green Men Blue Shorts,lower,blue,data/catalog/images/df_lower_034.jpg,https://www.google.com/search?tbm=shop&q=Do+U+Speak+Green+Men+Blue+Shorts+buy
 DF035,Urban Yoga Women Blue Skirt With Leggings,lower,blue,data/catalog/images/df_lower_035.jpg,https://www.google.com/search?tbm=shop&q=Urban+Yoga+Women+Blue+Skirt+With+Leggings+buy
 DF036,Jealous 21 Women Black Jeans,lower,black,data/catalog/images/df_lower_036.jpg,https://www.google.com/search?tbm=shop&q=Jealous+21+Women+Black+Jeans+buy
 DF037,John Miller Men Solid Type Black Trousers,lower,black,data/catalog/images/df_lower_037.jpg,https://www.google.com/search?tbm=shop&q=John+Miller+Men+Solid+Type+Black+Trousers+buy
 DF038,ONLY Women directoire blue Trousers,lower,blue,data/catalog/images/df_lower_038.jpg,https://www.google.com/search?tbm=shop&q=ONLY+Women+directoire+blue+Trousers+buy
-DF039,Nike Women Solid Pink Shorts,lower,pink,data/catalog/images/df_lower_039.jpg,https://www.google.com/search?tbm=shop&q=Nike+Women+Solid+Pink+Shorts+buy
 DF040,Jealous 21 Women Black Jegging,lower,black,data/catalog/images/df_lower_040.jpg,https://www.google.com/search?tbm=shop&q=Jealous+21+Women+Black+Jegging+buy
 DF041,ADIDAS Men Solid Navy Blue Track Pant,lower,navy blue,data/catalog/images/df_lower_041.jpg,https://www.google.com/search?tbm=shop&q=ADIDAS+Men+Solid+Navy+Blue+Track+Pant+buy
-DF042,Gini and Jony Girls Black Capris,lower,black,data/catalog/images/df_lower_042.jpg,https://www.google.com/search?tbm=shop&q=Gini+and+Jony+Girls+Black+Capris+buy
-DF043,Gini and Jony Kids Boys Solid Black Shorts,lower,black,data/catalog/images/df_lower_043.jpg,https://www.google.com/search?tbm=shop&q=Gini+and+Jony+Kids+Boys+Solid+Black+Shorts+buy
 DF044,John Miller Men Dark Grey Trousers,lower,grey,data/catalog/images/df_lower_044.jpg,https://www.google.com/search?tbm=shop&q=John+Miller+Men+Dark+Grey+Trousers+buy
 DF045,Tokyo Talkies Women Navy Slim Fit Jeans,lower,navy blue,data/catalog/images/df_lower_045.jpg,https://www.google.com/search?tbm=shop&q=Tokyo+Talkies+Women+Navy+Slim+Fit+Jeans+buy
 DF046,Proline Men Navy Track Pants,lower,navy blue,data/catalog/images/df_lower_046.jpg,https://www.google.com/search?tbm=shop&q=Proline+Men+Navy+Track+Pants+buy
@@ -59,48 +53,23 @@ DF052,Jealous 21 Women's Aaren Black Jegging,lower,black,data/catalog/images/df_
 DF053,Urban Yoga Women Black Track Pants,lower,black,data/catalog/images/df_lower_053.jpg,https://www.google.com/search?tbm=shop&q=Urban+Yoga+Women+Black+Track+Pants+buy
 DF054,Mineral Women Grey Skirt,lower,grey,data/catalog/images/df_lower_054.jpg,https://www.google.com/search?tbm=shop&q=Mineral+Women+Grey+Skirt+buy
 DF055,Lee Men Blue Chicago Fit Jeans,lower,blue,data/catalog/images/df_lower_055.jpg,https://www.google.com/search?tbm=shop&q=Lee+Men+Blue+Chicago+Fit+Jeans+buy
-DF056,Do u speak Green Girls Olive 3/4 Pant,lower,olive,data/catalog/images/df_lower_056.jpg,https://www.google.com/search?tbm=shop&q=Do+u+speak+Green+Girls+Olive+3%2F4+Pant+buy
 DF057,Puma Men Poly Knitted Black Tracksuit,lower,black,data/catalog/images/df_lower_057.jpg,https://www.google.com/search?tbm=shop&q=Puma+Men+Poly+Knitted+Black+Tracksuit+buy
 DF058,Puma Men Solid Blue Track Pants,lower,blue,data/catalog/images/df_lower_058.jpg,https://www.google.com/search?tbm=shop&q=Puma+Men+Solid+Blue+Track+Pants+buy
 DF059,Puma Women Essential Skinny Black 3/4 Pant,lower,black,data/catalog/images/df_lower_059.jpg,https://www.google.com/search?tbm=shop&q=Puma+Women+Essential+Skinny+Black+3%2F4+Pant+buy
 DF060,Allen Solly Women Red Shorts,lower,red,data/catalog/images/df_lower_060.jpg,https://www.google.com/search?tbm=shop&q=Allen+Solly+Women+Red+Shorts+buy
-SH001,Women Black Pointed Heels,shoes,black,data/catalog/images/df_shoes_001.jpg,https://www.google.com/search?tbm=shop&q=Women+Black+Pointed+Heels+buy
-SH002,Women Nude Court Pumps,shoes,beige,data/catalog/images/df_shoes_002.jpg,https://www.google.com/search?tbm=shop&q=Women+Nude+Court+Pumps+buy
-SH003,White Low-Top Sneakers,shoes,white,data/catalog/images/df_shoes_003.jpg,https://www.google.com/search?tbm=shop&q=White+Low-Top+Sneakers+buy
-SH004,Women Black Ankle Boots,shoes,black,data/catalog/images/df_shoes_004.jpg,https://www.google.com/search?tbm=shop&q=Women+Black+Ankle+Boots+buy
-SH005,Navy Ballet Flats,shoes,navy,data/catalog/images/df_shoes_005.jpg,https://www.google.com/search?tbm=shop&q=Navy+Ballet+Flats+buy
-SH006,Gold Evening Sandals,shoes,gold,data/catalog/images/df_shoes_006.jpg,https://www.google.com/search?tbm=shop&q=Gold+Evening+Sandals+buy
-SH007,Brown Leather Loafers,shoes,brown,data/catalog/images/df_shoes_007.jpg,https://www.google.com/search?tbm=shop&q=Brown+Leather+Loafers+buy
-SH008,Women Red Stiletto Heels,shoes,red,data/catalog/images/df_shoes_008.jpg,https://www.google.com/search?tbm=shop&q=Women+Red+Stiletto+Heels+buy
-FN001,Flora Flower Mini Dress,dress,yellow,data/catalog/images/fn_dress_001.jpg,https://finesse.us/products/flora-flower-mini-dress
-FN002,Kesia Ivory Mini Dress,dress,ivory,data/catalog/images/fn_dress_002.jpg,https://finesse.us/products/kesia-ivory-mini-dress
-FN003,Mindy Black Mini Dress,dress,black,data/catalog/images/fn_dress_003.jpg,https://finesse.us/products/mindy-black-mini-dress
-FN004,Xavier Body Print Dress,dress,multi,data/catalog/images/fn_dress_004.jpg,https://finesse.us/products/xavier-body-print-dress
-FN005,Florence Magenta Mesh Maxi Dress,dress,multi,data/catalog/images/fn_dress_005.jpg,https://finesse.us/products/florence-magenta-mesh-maxi-dress
-FN006,Rosie White Corset Dress,dress,white,data/catalog/images/fn_dress_006.jpg,https://finesse.us/products/rosie-white-corset-dress
-FN007,Alice White Mini Dress,dress,white,data/catalog/images/fn_dress_007.jpg,https://finesse.us/products/alice-white-mini-dress
-FN008,Belle Black Mini Dress,dress,black,data/catalog/images/fn_dress_008.jpg,https://finesse.us/products/belle-black-mini-dress
-FN009,El Orange Satin Midi Dress,dress,orange,data/catalog/images/fn_dress_009.jpg,https://finesse.us/products/el-orange-satin-midi-dress
-FN010,Tiana Pink Ruffle Rosette Dress,dress,pink,data/catalog/images/fn_dress_010.jpg,https://finesse.us/products/tiana-pink-ruffle-rosette-dress
-FN011,Finn Multi Print Maxi Dress,dress,multi,data/catalog/images/fn_dress_011.jpg,https://finesse.us/products/finn-multi-print-maxi-dress
-FN012,Jaya Mini Dress & Gloves,dress,multi,data/catalog/images/fn_dress_012.jpg,https://finesse.us/products/jaya-mini-dress
-FN013,Trisha Vegan Leather Mini Dress,dress,red,data/catalog/images/fn_dress_013.jpg,https://finesse.us/products/trisha-vegan-leather-mini-dress
-FN014,Jess Olive Halter Dress,dress,olive,data/catalog/images/fn_dress_014.jpg,https://finesse.us/products/jess-olive-halter-dress
-FN015,Matilda Yellow Mini Dress,dress,yellow,data/catalog/images/fn_dress_015.jpg,https://finesse.us/products/matilda-yellow-mini-dress
-FN016,Kyan Black Off Shoulder Maxi Dress,dress,black,data/catalog/images/fn_dress_016.jpg,https://finesse.us/products/kyan-black-off-shoulder-maxi-dress
-FN017,Mabel Pink Mini Dress,dress,pink,data/catalog/images/fn_dress_017.jpg,https://finesse.us/products/mabel-pink-mini-dress
-FN018,Connie White Mini Dress,dress,white,data/catalog/images/fn_dress_018.jpg,https://finesse.us/products/connie-white-mini-dress
-FN019,Erin Rainbow Sherbet Dress,dress,cream,data/catalog/images/fn_dress_019.jpg,https://finesse.us/products/the-erin
-FN020,Pam Blue Mini Dress & Gloves,dress,blue,data/catalog/images/fn_dress_020.jpg,https://finesse.us/products/pam-blue-mini-dress-gloves
-FN021,Remi Black Wrap Shirt Dress,dress,black,data/catalog/images/fn_dress_021.jpg,https://finesse.us/products/remi-black-wrap-shirt-dress
-FN022,Jocelyn Pink Sequin Mini Dress,dress,pink,data/catalog/images/fn_dress_022.jpg,https://finesse.us/products/jocelyn-pink-sequin-mini-dress
-FN023,Mabel White Mini Dress,dress,white,data/catalog/images/fn_dress_023.jpg,https://finesse.us/products/mabel-white-mini-dress
-FN024,Jess Grey Mini Dress,dress,grey,data/catalog/images/fn_dress_024.jpg,https://finesse.us/products/jess-grey-mini-dress
-FN025,Betti Dress,dress,blue,data/catalog/images/fn_dress_025.jpg,https://finesse.us/products/betti-dress
-FN026,Adrian Blue Mini Dress,dress,blue,data/catalog/images/fn_dress_026.jpg,https://finesse.us/products/adrian-blue-mini-dress
-FN027,Kayla Pink Fitted Maxi Dress,dress,pink,data/catalog/images/fn_dress_027.jpg,https://finesse.us/products/kayla-pink-fitted-maxi-dress
-FN028,Remi Wrap Shirt Dress,dress,cream,data/catalog/images/fn_dress_028.jpg,https://finesse.us/products/remi-wrap-shirt-dress
-FN029,Karlie Lace Up Boss Dress,dress,multi,data/catalog/images/fn_dress_029.jpg,https://finesse.us/products/the-karlie
-FN030,Valerie Leather Mini Dress & Gloves,dress,multi,data/catalog/images/fn_dress_030.jpg,https://finesse.us/products/valerie-leather-mini-dress-gloves
-FN031,Mirabel Body Print Maxi Dress,dress,multi,data/catalog/images/fn_dress_031.jpg,https://finesse.us/products/mirabel-body-print-maxi-dress
-FN032,Ava Dress & Gloves,dress,multi,data/catalog/images/fn_dress_032.jpg,https://finesse.us/products/ava-dress
+VT001,VITON-HD demo 01,upper,multi,data/samples/cloth_01.jpg,https://www.google.com/search?tbm=shop&q=VITON-HD+demo+01+buy
+VT002,VITON-HD demo 02,upper,multi,data/samples/cloth_02.jpg,https://www.google.com/search?tbm=shop&q=VITON-HD+demo+02+buy
+VT003,VITON-HD demo 03,upper,multi,data/samples/cloth_03.jpg,https://www.google.com/search?tbm=shop&q=VITON-HD+demo+03+buy
+VT004,VITON-HD demo 04,upper,multi,data/samples/cloth_04.jpg,https://www.google.com/search?tbm=shop&q=VITON-HD+demo+04+buy
+VT005,VITON-HD demo 05,upper,multi,data/samples/cloth_05.jpg,https://www.google.com/search?tbm=shop&q=VITON-HD+demo+05+buy
+VT006,VITON-HD demo 06,upper,multi,data/samples/cloth_06.jpg,https://www.google.com/search?tbm=shop&q=VITON-HD+demo+06+buy
+VT007,VITON-HD demo 07,upper,multi,data/samples/cloth_07.jpg,https://www.google.com/search?tbm=shop&q=VITON-HD+demo+07+buy
+VT008,VITON-HD demo 08,upper,multi,data/samples/cloth_08.jpg,https://www.google.com/search?tbm=shop&q=VITON-HD+demo+08+buy
+VT009,VITON-HD demo 09,upper,multi,data/samples/cloth_09.jpg,https://www.google.com/search?tbm=shop&q=VITON-HD+demo+09+buy
+VT010,VITON-HD demo 10,upper,multi,data/samples/cloth_10.jpg,https://www.google.com/search?tbm=shop&q=VITON-HD+demo+10+buy
+VT011,VITON-HD demo 11,upper,multi,data/samples/cloth_11.jpg,https://www.google.com/search?tbm=shop&q=VITON-HD+demo+11+buy
+VT012,VITON-HD demo 12,upper,multi,data/samples/cloth_12.jpg,https://www.google.com/search?tbm=shop&q=VITON-HD+demo+12+buy
+VT013,VITON-HD demo 13,upper,multi,data/samples/cloth_13.jpg,https://www.google.com/search?tbm=shop&q=VITON-HD+demo+13+buy
+VT014,VITON-HD demo 14,upper,multi,data/samples/cloth_14.jpg,https://www.google.com/search?tbm=shop&q=VITON-HD+demo+14+buy
+VT015,VITON-HD demo 15,upper,multi,data/samples/cloth_15.jpg,https://www.google.com/search?tbm=shop&q=VITON-HD+demo+15+buy
+VT016,VITON-HD demo 16,upper,multi,data/samples/cloth_16.jpg,https://www.google.com/search?tbm=shop&q=VITON-HD+demo+16+buy
