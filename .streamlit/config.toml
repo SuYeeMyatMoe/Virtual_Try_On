@@ -1,11 +1,11 @@
 [theme]
-base = "dark"
-primaryColor = "#8B5CF6"
-backgroundColor = "#131313"
-secondaryBackgroundColor = "#20201F"
-textColor = "#E5E2E1"
-borderColor = "#494454"
-linkColor = "#D0BCFF"
+base = "light"
+primaryColor = "#B5885C"
+backgroundColor = "#F9F6F0"
+secondaryBackgroundColor = "#F4EBE1"
+textColor = "#1C1512"
+borderColor = "#A87B4C"
+linkColor = "#8C5828"
 font = "'Hanken Grotesk':https://fonts.googleapis.com/css2?family=Hanken+Grotesk:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap"
 headingFont = "'Bodoni Moda':https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,500;0,6..96,600;0,6..96,700;1,6..96,500&display=swap"
 codeFont = "'JetBrains Mono':https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap"
@@ -14,18 +14,13 @@ buttonRadius = "4px"
 showWidgetBorder = true
 showSidebarBorder = false
 linkUnderline = false
-redColor = "#FFB4AB"
-orangeColor = "#F59E0B"
-greenColor = "#10B981"
-violetColor = "#8B5CF6"
-grayColor = "#958EA0"
 
 [theme.sidebar]
-backgroundColor = "#0A0A0A"
-secondaryBackgroundColor = "#1C1B1B"
-textColor = "#E5E2E1"
-primaryColor = "#8B5CF6"
-borderColor = "#494454"
+backgroundColor = "#3D2619"
+secondaryBackgroundColor = "#5C3C28"
+textColor = "#FFFFFF"
+primaryColor = "#B5885C"
+borderColor = "#A87B4C"
 
 [client]
 toolbarMode = "minimal"

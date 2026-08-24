@@ -32,12 +32,12 @@ SWATCH_HEX = {
     "pastel pink": "#F0C4CC",
 }
 
-BOARD_BG = (18, 16, 20)
-BOARD_INK = (244, 241, 236)
-BOARD_SOFT = (180, 170, 160)
-BOARD_FAINT = (140, 130, 120)
-BOARD_GOLD = (196, 165, 116)
-BOARD_FILL = (40, 36, 42)
+BOARD_BG = (244, 235, 225)
+BOARD_INK = (44, 24, 16)
+BOARD_SOFT = (92, 56, 36)
+BOARD_FAINT = (140, 105, 80)
+BOARD_GOLD = (181, 136, 92)
+BOARD_FILL = (255, 255, 255)
 BOARD_SIZE = (1100, 620)
 BANDS = (
     ("shoulders", 0.22, 0.38, (139, 92, 246, 55)),
@@ -734,7 +734,7 @@ def _overlay_bands(board: Image.Image, box: tuple[int, int, int, int], label_map
         top = y + int(h * y0)
         bot = y + int(h * y1)
         draw.rectangle((x, top, x + w, bot), fill=fill)
-        draw.text((x + 8, top + 4), name, fill=(244, 241, 236, 220), font=font)
+        draw.text((x + 8, top + 4), name, fill=(44, 24, 16, 230), font=font)
     return Image.alpha_composite(board.convert("RGBA"), overlay).convert("RGB")
 
 
