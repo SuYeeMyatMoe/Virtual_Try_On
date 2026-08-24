@@ -1432,7 +1432,15 @@ def tryon_tab():
                 label_visibility="collapsed",
             )
             stylist_avatar = st.session_state.get("stylist_avatar")
-            if stylist_avatar is not None and person_file is None:
+            if person_file is not None:
+                person_preview = Image.open(person_file)
+                person_file.seek(0)  # reset so load_rgb can re-read it
+                buf = io.BytesIO()
+                person_preview.convert("RGB").thumbnail((280, 420), Image.Resampling.LANCZOS)
+                person_preview.convert("RGB").save(buf, format="JPEG", quality=82, optimize=True)
+                st.caption("Subject preview")
+                st.image(buf.getvalue(), width=180)
+            elif stylist_avatar is not None:
                 st.caption("Using your Stylist AI avatar as the subject photo.")
                 st.image(_array_jpeg(stylist_avatar, max_width=280), width=180)
         with st.container(border=True):
@@ -1444,13 +1452,21 @@ def tryon_tab():
                 key="garment",
                 label_visibility="collapsed",
             )
+            if garment_file is not None:
+                g_preview = Image.open(garment_file)
+                garment_file.seek(0)  # reset so load_rgb can re-read it
+                g_buf = io.BytesIO()
+                g_preview.convert("RGB").thumbnail((280, 420), Image.Resampling.LANCZOS)
+                g_preview.convert("RGB").save(g_buf, format="JPEG", quality=82, optimize=True)
+                st.caption("Garment preview")
+                st.image(g_buf.getvalue(), width=180)
             catalog_pick = st.session_state.get("catalog_garment_path")
-            if catalog_pick and Path(catalog_pick).exists():
+            if catalog_pick and Path(catalog_pick).exists() and garment_file is None:
                 cat_label = st.session_state.get("catalog_garment_category") or ""
                 title = st.session_state.get("catalog_garment_title", Path(catalog_pick).name)
                 suffix = f" · {cat_label}" if cat_label else ""
                 st.caption(f"Catalog pick · {title}{suffix}")
-                _show_photo(Path(catalog_pick), max_width=280)
+                st.image(_jpeg_preview(str(Path(catalog_pick)), _source_mtime(Path(catalog_pick)), max_width=280), width=180)
                 if st.button("Clear catalog pick", type="secondary"):
                     st.session_state.pop("catalog_garment_path", None)
                     st.session_state.pop("catalog_garment_title", None)
