@@ -969,6 +969,173 @@ def _inject_css():
             font-size:.6rem !important;
             letter-spacing:.06em !important;
         }
+
+        /* ---------- CHATBOT UI & STYLIST ATELIER STYLING ---------- */
+        .chat-empty-state {
+            text-align: center;
+            padding: 2.5rem 1.8rem;
+            background: linear-gradient(180deg, rgba(249, 246, 240, 0.95) 0%, #FFFFFF 100%);
+            border: 1px dashed rgba(181, 136, 92, 0.4);
+            border-radius: 12px;
+            margin: 0.5rem 0 1.2rem 0;
+            box-shadow: 0 4px 20px -8px rgba(28, 21, 18, 0.05);
+        }
+        .chat-empty-icon {
+            font-size: 2.2rem;
+            margin-bottom: 0.4rem;
+            display: inline-block;
+        }
+        .chat-empty-state h5 {
+            font-family: 'Bodoni Moda', serif;
+            font-size: 1.35rem;
+            margin: 0.35rem 0;
+            color: var(--ink) !important;
+            letter-spacing: -0.01em;
+        }
+        .chat-empty-state p {
+            font-size: 0.88rem;
+            color: #4A3A30 !important;
+            max-width: 520px;
+            margin: 0 auto 0.5rem auto;
+            line-height: 1.5;
+        }
+
+        /* Message Containers */
+        [data-testid="stChatMessage"] {
+            background: #FFFFFF !important;
+            border: 1px solid var(--line-soft) !important;
+            border-radius: 12px !important;
+            padding: 1.1rem 1.3rem !important;
+            margin-bottom: 0.9rem !important;
+            box-shadow: 0 4px 16px -6px rgba(28, 21, 18, 0.05) !important;
+            transition: all 0.25s ease !important;
+        }
+        [data-testid="stChatMessage"]:hover {
+            border-color: rgba(181, 136, 92, 0.35) !important;
+            box-shadow: 0 8px 24px -8px rgba(28, 21, 18, 0.09) !important;
+        }
+
+        /* Assistant Message Styling */
+        [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatar"] [data-testid="stIconMaterialAutoAwesome"]),
+        [data-testid="stChatMessage"]:has([data-testid="stIconMaterialAutoAwesome"]) {
+            background: linear-gradient(135deg, rgba(249, 246, 240, 0.9) 0%, #FFFFFF 100%) !important;
+            border-left: 4px solid var(--camel) !important;
+        }
+
+        /* User Message Styling */
+        [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatar"] [data-testid="stIconMaterialPerson"]),
+        [data-testid="stChatMessage"]:has([data-testid="stIconMaterialPerson"]) {
+            background: linear-gradient(135deg, #FAF6F2 0%, #F4ECE3 100%) !important;
+            border-left: 4px solid var(--ink) !important;
+        }
+
+        /* Avatars */
+        [data-testid="stChatMessageAvatar"] {
+            background: var(--paper-deep) !important;
+            border: 1.5px solid var(--camel) !important;
+            border-radius: 50% !important;
+            box-shadow: 0 2px 10px rgba(181, 136, 92, 0.22) !important;
+            width: 38px !important;
+            height: 38px !important;
+        }
+        [data-testid="stChatMessageAvatar"] svg {
+            color: var(--camel-deep) !important;
+            fill: var(--camel-deep) !important;
+        }
+
+        /* Role Badges inside messages */
+        .chat-role-label {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.65rem;
+            font-weight: 700;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: var(--camel-deep) !important;
+            margin-bottom: 0.45rem;
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+        }
+        .chat-user-label {
+            color: var(--ink) !important;
+        }
+
+        /* Quick Suggestions Chips (Pills) */
+        div[data-testid="stPills"] {
+            gap: 0.5rem !important;
+            margin-top: 0.4rem !important;
+            margin-bottom: 0.8rem !important;
+        }
+        div[data-testid="stPills"] button {
+            background: #FFFFFF !important;
+            border: 1px solid rgba(181, 136, 92, 0.35) !important;
+            color: var(--ink) !important;
+            border-radius: 20px !important;
+            padding: 0.45rem 1.1rem !important;
+            font-size: 0.82rem !important;
+            font-weight: 600 !important;
+            text-transform: none !important;
+            letter-spacing: 0.01em !important;
+            transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+            box-shadow: 0 2px 8px rgba(28, 21, 18, 0.04) !important;
+        }
+        div[data-testid="stPills"] button:hover {
+            background: var(--camel) !important;
+            color: #FFFFFF !important;
+            border-color: var(--camel) !important;
+            transform: translateY(-2px) !important;
+            box-shadow: 0 6px 16px -4px rgba(181, 136, 92, 0.4) !important;
+        }
+
+        /* Voice Draft Card */
+        .voice-draft-card {
+            background: linear-gradient(135deg, rgba(240, 234, 223, 0.7) 0%, rgba(255, 255, 255, 0.95) 100%);
+            border: 1px solid var(--camel);
+            border-radius: 12px;
+            padding: 1.25rem;
+            margin: 1.1rem 0;
+            box-shadow: 0 6px 20px -6px rgba(181, 136, 92, 0.18);
+        }
+        .voice-badge {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            color: var(--camel-deep);
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            margin-bottom: 0.6rem;
+        }
+
+        /* Chat Input Field */
+        [data-testid="stChatInput"] {
+            max-width: 100% !important;
+            background: #FFFFFF !important;
+            border: 1.5px solid rgba(181, 136, 92, 0.35) !important;
+            border-radius: 12px !important;
+            box-shadow: 0 8px 25px -8px rgba(28, 21, 18, 0.1) !important;
+            transition: all 0.3s ease !important;
+            padding: 0.3rem 0.5rem !important;
+        }
+        [data-testid="stChatInput"]:focus-within {
+            border-color: var(--camel) !important;
+            box-shadow: 0 10px 30px -6px rgba(181, 136, 92, 0.3) !important;
+        }
+        [data-testid="stChatInput"] textarea {
+            color: var(--ink) !important;
+            font-size: 0.92rem !important;
+        }
+        [data-testid="stChatInputSubmitButton"] button {
+            background-color: var(--camel) !important;
+            border-color: var(--camel) !important;
+            border-radius: 8px !important;
+        }
+        [data-testid="stChatInputSubmitButton"] button svg {
+            fill: #FFFFFF !important;
+            color: #FFFFFF !important;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -2494,11 +2661,26 @@ def stylist_tab():
 
         messages = st.session_state.get("stylist_messages") or []
         if not messages:
-            st.caption("Type a question when you want a recommendation. Analyze still fills the color set and looks above.")
+            st.markdown(
+                """
+                <div class="chat-empty-state">
+                    <span class="chat-empty-icon">✨</span>
+                    <span class="brand-eyebrow" style="margin-bottom:0.25rem;">ATELIER AI STYLIST</span>
+                    <h5>How can I curate your look today?</h5>
+                    <p>Ask for personalized color palettes, outfit pairings for special occasions, or upload reference looks for style analysis.</p>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
         for i, msg in enumerate(messages):
             role = msg.get("role", "assistant")
             avatar_icon = ":material/person:" if role == "user" else ":material/auto_awesome:"
             with st.chat_message(role, avatar=avatar_icon):
+                if role == "assistant":
+                    st.markdown('<div class="chat-role-label"><span>✨</span> ATELIER STYLIST AI</div>', unsafe_allow_html=True)
+                else:
+                    st.markdown('<div class="chat-role-label chat-user-label"><span>👤</span> YOU</div>', unsafe_allow_html=True)
+
                 extra_images = msg.get("images") or []
                 if extra_images:
                     cols = st.columns(min(3, len(extra_images)))
@@ -2514,11 +2696,11 @@ def stylist_tab():
                     st.write(body)
                 granite_prompt = str(msg.get("granite_prompt") or "").strip()
                 if granite_prompt:
-                    with st.expander("Granite prompt", expanded=True):
+                    with st.expander("Granite prompt", expanded=False):
                         st.write(granite_prompt)
                 dress_extra = msg.get("dress_recs") or []
                 if dress_extra:
-                    st.markdown("**Dress**")
+                    st.markdown("**Dress Recommendations**")
                     _render_stylist_looks(dress_extra, key_prefix=f"chat_{i}_dress")
                 extra = msg.get("recs") or []
                 if extra and not dress_extra:
@@ -2528,7 +2710,15 @@ def stylist_tab():
             st.warning(st.session_state["stylist_voice_error"])
 
         if st.session_state.get("stylist_draft_text") is not None:
-            st.caption("Voice converted to text. Edit anything, then send.")
+            st.markdown(
+                """
+                <div class="voice-draft-card">
+                    <div class="voice-badge">
+                        <span>🎙️</span> Voice Note Transcribed — Review & Edit
+                    </div>
+                """,
+                unsafe_allow_html=True,
+            )
             if st.session_state.get("stylist_draft_audio"):
                 st.audio(
                     st.session_state["stylist_draft_audio"],
@@ -2547,6 +2737,7 @@ def stylist_tab():
                 send_draft = st.button("Send message", type="primary", width="stretch")
             with clear_c:
                 clear_draft = st.button("Discard", width="stretch")
+            st.markdown("</div>", unsafe_allow_html=True)
             if send_draft:
                 st.session_state["stylist_pending_text"] = str(
                     st.session_state.get("stylist_draft_editor") or ""
@@ -2563,6 +2754,7 @@ def stylist_tab():
         if not any(m.get("role") == "user" for m in messages) and st.session_state.get(
             "stylist_draft_text"
         ) is None:
+            st.markdown('<div style="margin-top:0.6rem; margin-bottom:0.2rem;"><span class="brand-eyebrow" style="font-size:0.68rem;">QUICK SUGGESTIONS</span></div>', unsafe_allow_html=True)
             selected = st.pills(
                 "Try asking",
                 [
