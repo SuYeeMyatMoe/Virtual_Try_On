@@ -18,7 +18,9 @@ Full write-up: [`overview.md`](overview.md) · model map: [`MODELS.md`](MODELS.m
 - Stylist AI **Analyze:** 12-season body tone, palette, silhouette, **Shop for** Auto / Woman / Man
 - Catalog looks filtered by **menswear / womenswear**, palette boost, and avoid-colors
 - Chat stays empty until you type; markdown replies; up to 3 catalog titles
-- Look requests (e.g. “I want a black dress”) use **IBM Granite 4.1-8B** (`HF_TOKEN`) to write a shopping prompt, then FashionCLIP shows **dress** tiles. Gemini stays for other chat, Analyze, voice, and captions.
+- Look requests (e.g. “I want a black dress”) use **HF Serverless Router / Granite LLM** (`meta-llama/Llama-3.1-8B-Instruct` / `Qwen2.5` / Granite) with automatic Gemini LLM fallback to write a structured shopping prompt (JSON), then FashionCLIP retrieves matching catalog tiles. Gemini handles general chat, Analyze, voice, and captions.
+- **Garment Color Tinting**: Preprocesses upper/lower/dress garments with HSL/LAB hue-rotation (`tint_garment` in `src/preprocess.py`) to customize garment shades before virtual try-on.
+- **Hair Color Change**: Detects hair regions via SegFormer segmentation (label 2) and applies custom hair recoloring (`apply_hair_color` in `src/tryon.py`) on subject portraits.
 - Voice: Gemini STT → **editable** text → Send / Discard (does not auto-send)
 - **Download analysis PDF** after Analyze: season, body tone, body type, color set, silhouette (no catalog list)
 - Gemini garment caption, advice, and result explanation (template fallback if no key)
@@ -31,10 +33,11 @@ Full write-up: [`overview.md`](overview.md) · model map: [`MODELS.md`](MODELS.m
 | IDM-VTON (upper) | `yisol/IDM-VTON` Space `/tryon` | HF Space GPU |
 | CatVTON (lower + fallback) | `zhengchong/CatVTON` `/submit_function` | HF Space GPU |
 | Stable Diffusion 2 Inpainting | `stabilityai/stable-diffusion-2-inpainting` via `router.huggingface.co/hf-inference` | HF Inference API |
-| Local overlay | `run_local_overlay` in `src/tryon.py` | Local CPU |
+| Local overlay & Hair colorizer | `run_local_overlay` / `apply_hair_color` in `src/tryon.py` | Local CPU |
+| Garment color tinter | `tint_garment` in `src/preprocess.py` | Local CPU |
 | Marqo FashionCLIP | `Marqo/marqo-fashionCLIP` | Local CPU |
-| Gemini 2.0 Flash | Google Generative AI API | Cloud API |
-| IBM Granite 4.1-8B (look prompts) | `ibm-granite/granite-4.1-8b` via `router.huggingface.co` | HF Inference (`HF_TOKEN`) |
+| Gemini 2.5 / 3.6 Flash | Google Generative AI API | Cloud API |
+| HF Router & Granite (look prompts) | `meta-llama/Llama-3.1-8B-Instruct` / `Qwen2.5` / Granite via `router.huggingface.co` | HF Inference (`HF_TOKEN`) |
 
 Fallback for recommendations: `openai/clip-vit-base-patch32`.
 

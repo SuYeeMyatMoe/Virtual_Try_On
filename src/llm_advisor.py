@@ -19,8 +19,8 @@ from .preprocess import normalize_color_name, normalize_garment_region
 _ENV = Path(__file__).resolve().parents[1] / ".env"
 load_dotenv(_ENV, override=True)
 
-DEFAULT_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
-GRANITE_MODEL = os.getenv("GRANITE_MODEL", "ibm-granite/granite-4.1-8b")
+DEFAULT_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+GRANITE_MODEL = os.getenv("GRANITE_MODEL", "meta-llama/Llama-3.1-8B-Instruct")
 GRANITE_URL = os.getenv(
     "GRANITE_INFERENCE_URL",
     "https://router.huggingface.co/v1/chat/completions",
@@ -715,7 +715,7 @@ def transcribe_audio(audio: Any, mime_type: str = "audio/wav") -> tuple[str, str
         if candidate not in mimes:
             mimes.append(candidate)
     models = []
-    for name in (DEFAULT_MODEL, "gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash"):
+    for name in (DEFAULT_MODEL, "gemini-2.5-flash", "gemini-3.6-flash"):
         if name and name not in models:
             models.append(name)
 
@@ -930,15 +930,9 @@ def _normalize_look_payload(data: dict, user_text: str, analysis: Optional[dict]
 
 
 def granite_look_prompt(user_text: str, analysis: Optional[dict] = None) -> dict:
-    """IBM Granite 4.1-8B writes a try-on / shopping prompt. Falls back locally."""
+    """Writes a try-on / shopping prompt using HF Serverless Router or Gemini. Falls back locally."""
     analysis = analysis or {}
     fallback = _fallback_look_prompt(user_text, analysis)
-    from .hf_auth import ensure_hf_login, hf_token
-
-    ensure_hf_login()
-    token = hf_token()
-    if not token:
-        return fallback
 
     palette = ", ".join(str(c) for c in (analysis.get("palette") or [])[:5])
     user = (
@@ -948,37 +942,67 @@ def granite_look_prompt(user_text: str, analysis: Optional[dict] = None) -> dict
         f"Department: {analysis.get('presentation') or 'n/a'}.\n"
         "Write JSON for a matching garment only. Do not mention shoes."
     )
-    try:
+
+    from .hf_auth import ensure_hf_login, hf_token
+
+    ensure_hf_login()
+    token = hf_token()
+
+    if token:
         import requests
 
-        resp = requests.post(
-            GRANITE_URL,
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": GRANITE_MODEL,
-                "messages": [
-                    {"role": "system", "content": GRANITE_SYSTEM},
-                    {"role": "user", "content": user},
-                ],
-                "max_tokens": 180,
-                "temperature": 0.3,
-            },
-            timeout=45,
-        )
-        resp.raise_for_status()
-        payload = resp.json()
-        text = (
-            (((payload.get("choices") or [{}])[0].get("message") or {}).get("content"))
-            or payload.get("generated_text")
-            or ""
-        )
-        data = _parse_json_object(str(text))
-        if data:
-            return _normalize_look_payload(data, user_text, analysis)
-    except Exception as exc:
-        print(f"Granite look prompt failed ({exc}). Using local fallback.")
+        models_to_try = []
+        if GRANITE_MODEL:
+            models_to_try.append(GRANITE_MODEL)
+        for fallback_m in ("meta-llama/Llama-3.1-8B-Instruct", "Qwen/Qwen2.5-Coder-32B-Instruct", "meta-llama/Llama-3.3-70B-Instruct"):
+            if fallback_m not in models_to_try:
+                models_to_try.append(fallback_m)
+
+        for model_name in models_to_try:
+            try:
+                resp = requests.post(
+                    GRANITE_URL,
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": model_name,
+                        "messages": [
+                            {"role": "system", "content": GRANITE_SYSTEM},
+                            {"role": "user", "content": user},
+                        ],
+                        "max_tokens": 180,
+                        "temperature": 0.3,
+                    },
+                    timeout=15,
+                )
+                if resp.status_code == 200:
+                    payload = resp.json()
+                    text = (
+                        (((payload.get("choices") or [{}])[0].get("message") or {}).get("content"))
+                        or payload.get("generated_text")
+                        or ""
+                    )
+                    data = _parse_json_object(str(text))
+                    if data:
+                        return _normalize_look_payload(data, user_text, analysis)
+            except Exception:
+                pass
+
+    if has_gemini():
+        try:
+            text = _generate_text(
+                user,
+                max_output_tokens=180,
+                temperature=0.3,
+                system_instruction=GRANITE_SYSTEM,
+            )
+            data = _parse_json_object(text)
+            if data:
+                return _normalize_look_payload(data, user_text, analysis)
+        except Exception:
+            pass
+
     return fallback
 
