@@ -6,7 +6,6 @@ Streamlit app for virtual try-on plus a Fashion Stylist AI.
 
 `HF_TOKEN` is required for live try-on (Hugging Face Spaces / Inference API). `GOOGLE_API_KEY` is optional for Gemini captions, advice, and chat; **voice transcription needs the key**. The same key is the Google AI Studio Gemini key (`GEMINI_API_KEY` also works).
 
-Full write-up: [`overview.md`](overview.md) · model map: [`MODELS.md`](MODELS.md).
 
 ## Features
 
