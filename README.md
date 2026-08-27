@@ -1,5 +1,8 @@
 # Virtual Clothing Try-On (VESTURE)
 ![Home](Home.png)
+![VirtualTryOn](Studio.png)
+![Stylist](Stylist.png)
+
 Streamlit app for virtual try-on plus a Fashion Stylist AI.
 
 **Pipeline:** SegFormer clothing segmentation → **IDM-VTON** (upper) / **CatVTON** (lower + fallback) / SD2 / local overlay → FashionCLIP Top-5 → optional **Gemini** stylist (analysis, chat, voice, PDF).
